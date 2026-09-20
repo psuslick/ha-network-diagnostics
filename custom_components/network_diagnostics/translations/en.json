@@ -1,0 +1,49 @@
+{
+  "title": "Network Diagnostics",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Network Diagnostics",
+        "description": "Network Diagnostics automatically discovers supported Uptime Kuma monitors already exposed by Home Assistant. It performs no network probes itself. After setup, use the Network Diagnostics sidebar panel to see recognized monitors, missing coverage, diagnoses, and incidents."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only one Network Diagnostics instance is supported."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Diagnosis and incident behavior",
+        "description": "Monitor discovery is automatic. These advanced settings control data freshness, debounce/recovery, sustained mesh-latency detection, and retained incident history.",
+        "data": {
+          "stale_seconds": "Uptime Kuma feed stale after (seconds)",
+          "failure_confirm_seconds": "Confirm abnormal diagnosis after (seconds)",
+          "recovery_confirm_seconds": "Confirm recovery after (seconds)",
+          "mesh_latency_ms": "Mesh-node latency threshold (ms)",
+          "mesh_degradation_seconds": "Sustained mesh latency required (seconds)",
+          "incident_retention": "Completed incidents to retain"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {"name": "Status"},
+      "confidence": {"name": "Confidence"},
+      "coverage": {"name": "Coverage"},
+      "last_incident": {"name": "Last incident"},
+      "incidents_24h": {"name": "Incidents 24h"}
+    },
+    "binary_sensor": {
+      "monitoring_problem": {"name": "Monitoring problem"},
+      "active_incident": {"name": "Active incident"}
+    },
+    "button": {
+      "analyze_now": {"name": "Analyze now"}
+    },
+    "event": {
+      "incident": {"name": "Incident"}
+    }
+  }
+}
