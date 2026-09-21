@@ -44,7 +44,7 @@ Prerequisites:
 - HACS
 - the official Home Assistant **Uptime Kuma** integration configured and exposing at least one monitor
 
-Install Network Diagnostics as a HACS custom integration, restart Home Assistant when HACS requests it, then add **Network Diagnostics** under **Settings → Devices & services**.
+Install Network Diagnostics as a HACS custom integration and restart Home Assistant when HACS requests it. Network Diagnostics is a normal **service integration** and appears under **Settings → Devices & services → Integrations**. On a fresh install, add **Network Diagnostics** there. On an upgrade from the prototype/v0.3.0 migration state, open the existing **Network Diagnostics** entry and choose **Reconfigure** to complete the one-time generic topology setup.
 
 The setup flow:
 
@@ -143,7 +143,7 @@ Run:
 ```bash
 python tools/check_privacy.py
 python tools/generate_source_manifest.py
-python tools/check_repo.py --allow-placeholders
+python tools/check_repo.py
 pytest
 python -m compileall -q custom_components tests tools
 node --check custom_components/network_diagnostics/frontend/network-diagnostics-panel.js
@@ -152,3 +152,10 @@ node --check custom_components/network_diagnostics/frontend/network-diagnostics-
 The repository also includes HACS and hassfest GitHub Actions.
 
 The complete acceptance contract is [SUCCESS_CRITERIA.md](SUCCESS_CRITERIA.md).
+
+
+## Upgrade from v0.3.0
+
+v0.3.1 corrects the first live-install UX defects found in v0.3.0. The integration is classified as an HA `service` so its loaded entry is visible on the normal Integrations page. If the v0.3 migration already cleared the old inferred mappings, the unconfigured state now reports **Setup required** / **Not configured** rather than presenting a false monitoring failure. Use the visible Network Diagnostics entry's **Reconfigure** flow to assign roles/topology once.
+
+The patch does not restore the old vendor/provider-specific discovery profile and does not reintroduce private deployment data into source.

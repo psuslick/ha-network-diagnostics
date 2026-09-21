@@ -104,8 +104,8 @@
   },
   "issues": {
     "configuration_required": {
-      "title": "Network Diagnostics needs configuration",
-      "description": "Assign Uptime Kuma monitors to diagnostic roles and define any local parent relationships using the Network Diagnostics reconfigure flow."
+      "title": "Network Diagnostics one-time setup is required",
+      "description": "Network Diagnostics is installed and found {count} Uptime Kuma monitor(s), but diagnostic roles/topology have not been configured. Go to Settings → Devices & services → Integrations → Network Diagnostics and choose Reconfigure. This is a setup state, not a network outage."
     },
     "configured_monitor_missing": {
       "title": "Configured diagnostic monitors are missing",
@@ -122,21 +122,39 @@
   },
   "entity": {
     "sensor": {
-      "status": {"name": "Status"},
-      "confidence": {"name": "Confidence"},
-      "coverage": {"name": "Coverage"},
-      "last_incident": {"name": "Last incident"},
-      "incidents_24h": {"name": "Incidents 24h"}
+      "status": {
+        "name": "Status"
+      },
+      "confidence": {
+        "name": "Confidence"
+      },
+      "coverage": {
+        "name": "Coverage"
+      },
+      "last_incident": {
+        "name": "Last incident"
+      },
+      "incidents_24h": {
+        "name": "Incidents 24h"
+      }
     },
     "binary_sensor": {
-      "monitoring_problem": {"name": "Monitoring problem"},
-      "active_incident": {"name": "Active incident"}
+      "monitoring_problem": {
+        "name": "Monitoring problem"
+      },
+      "active_incident": {
+        "name": "Active incident"
+      }
     },
     "button": {
-      "analyze_now": {"name": "Analyze now"}
+      "analyze_now": {
+        "name": "Analyze now"
+      }
     },
     "event": {
-      "incident": {"name": "Incident"}
+      "incident": {
+        "name": "Incident"
+      }
     }
   }
 }

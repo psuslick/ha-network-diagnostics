@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replace privacy-safe repository placeholders with publisher-selected metadata."""
+"""Add publisher-selected repository metadata to a privacy-neutral install tree."""
 from __future__ import annotations
 
 import argparse

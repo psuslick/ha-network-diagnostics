@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.1
+
+- Changed Home Assistant `integration_type` from `helper` to `service` so Network Diagnostics is visible and manageable on the normal Integrations page.
+- Changed the conservative migrated/unconfigured state from `Monitoring incomplete` to `Setup required`.
+- Coverage now reports `Not configured` until the role/topology reconfigure flow is completed.
+- `Monitoring problem` no longer turns on solely because one-time migration setup is pending.
+- Setup Repair/panel copy now explains that Kuma discovery succeeded and points to the Network Diagnostics Reconfigure flow.
+- Removed unresolved repository-owner placeholders from the installable manifest; publication metadata is omitted until explicit finalization.
+- Preserved the v0.3 generic topology, privacy model, RCA engine, RAM-only baselines, and one-raw-historian architecture.
+
 ## 0.3.0
 
 - Rebuilt configuration around generic monitor roles and explicit topology.

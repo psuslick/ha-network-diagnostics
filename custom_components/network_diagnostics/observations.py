@@ -51,6 +51,7 @@ class Observation:
 
 @dataclass(slots=True)
 class ObservationSet:
+    configured: bool = True
     observations: list[Observation] = field(default_factory=list)
     monitoring_gaps: list[str] = field(default_factory=list)
     coverage_gaps: list[str] = field(default_factory=list)

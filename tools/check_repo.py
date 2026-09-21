@@ -15,8 +15,7 @@ from generate_source_manifest import build_manifest_lines
 
 ROOT = Path(__file__).resolve().parents[1]
 COMP = ROOT / "custom_components" / "network_diagnostics"
-PLACEHOLDER = "REPLACE_WITH_"
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 
 
 def fail(message: str) -> None:
@@ -34,9 +33,9 @@ def load_json(path: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--allow-placeholders",
+        "--require-publication-metadata",
         action="store_true",
-        help="Allow pre-publication manifest URL/codeowner placeholders.",
+        help="Require finalized GitHub documentation/issue/codeowner metadata.",
     )
     args = parser.parse_args()
 
@@ -46,7 +45,7 @@ def main() -> int:
         ROOT / "KUMA_TAG_CONVENTION.md",
         ROOT / "PRIVACY_AND_PUBLISHING.md",
         ROOT / "DECISIONS_AND_HANDOFF.md",
-        ROOT / "RELEASE_NOTES_v0.3.0.md",
+        ROOT / "RELEASE_NOTES_v0.3.1.md",
         ROOT / "REPOSITORY_SETUP.md",
         ROOT / "CHANGELOG.md",
         ROOT / "STATUS.md",
@@ -96,8 +95,8 @@ def main() -> int:
         fail("manifest single_config_entry must be true")
     if manifest.get("iot_class") != "calculated":
         fail("manifest iot_class must be calculated")
-    if manifest.get("integration_type") != "helper":
-        fail("manifest integration_type must be helper")
+    if manifest.get("integration_type") != "service":
+        fail("manifest integration_type must be service")
 
     required_dependencies = {
         "frontend", "http", "panel_custom", "uptime_kuma", "websocket_api"
@@ -106,17 +105,27 @@ def main() -> int:
     if missing_deps:
         fail(f"manifest missing dependencies: {', '.join(missing_deps)}")
 
-    for key in ("documentation", "issue_tracker"):
-        value = manifest.get(key)
-        if not isinstance(value, str) or not value.startswith("https://github.com/"):
-            fail(f"manifest {key} must be a GitHub HTTPS URL")
-    codeowners = manifest.get("codeowners")
-    if not isinstance(codeowners, list) or not codeowners or not all(
+    serialized_manifest = json.dumps(manifest)
+    if "REPLACE_WITH_" in serialized_manifest:
+        fail("installable manifest contains unresolved publication placeholders")
+
+    codeowners = manifest.get("codeowners", [])
+    if not isinstance(codeowners, list) or not all(
         isinstance(item, str) and item.startswith("@") for item in codeowners
     ):
-        fail("manifest codeowners must contain at least one @owner")
-    if not args.allow_placeholders and PLACEHOLDER in json.dumps(manifest):
-        fail("manifest still contains repository placeholders; run tools/finalize_repo.py")
+        fail("manifest codeowners must be an array of @owners when present")
+    for key in ("documentation", "issue_tracker"):
+        value = manifest.get(key)
+        if value is not None and (
+            not isinstance(value, str) or not value.startswith("https://github.com/")
+        ):
+            fail(f"manifest {key} must be a GitHub HTTPS URL when present")
+    if args.require_publication_metadata:
+        for key in ("documentation", "issue_tracker"):
+            if not manifest.get(key):
+                fail(f"publication-finalized manifest is missing {key}")
+        if not codeowners:
+            fail("publication-finalized manifest must have at least one codeowner")
 
     hacs = load_json(ROOT / "hacs.json")
     if hacs.get("name") != "Network Diagnostics":
@@ -163,6 +172,7 @@ def main() -> int:
         'customElements.define("network-diagnostics-panel"',
         "Topology and impact",
         "Baseline:",
+        "One-time setup required",
     ):
         if required_string not in js:
             fail(f"panel JavaScript missing {required_string!r}")
@@ -207,13 +217,20 @@ def main() -> int:
         "sidebar panel",
         "Reconfigure",
         "Coverage remains",
+        "service integration",
     ):
         if phrase.casefold() not in readme.casefold():
             fail(f"README does not document required concept: {phrase}")
 
     criteria = (ROOT / "SUCCESS_CRITERIA.md").read_text(encoding="utf-8")
-    if "One raw historian" not in criteria or "Kuma Tags are optional hints" not in criteria:
-        fail("success criteria are incomplete")
+    for phrase in (
+        "One raw historian",
+        "Kuma Tags are optional hints",
+        "Normal Integrations visibility",
+        "Setup state is not a fault state",
+    ):
+        if phrase not in criteria:
+            fail(f"success criteria are missing: {phrase}")
 
     print("Repository checks passed")
     return 0

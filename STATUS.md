@@ -1,11 +1,11 @@
 # Status
 
-Version: **0.3.0**
+Version: **0.3.1**
 
-Build status: **PACKAGE-VALIDATED**.
+Build status: **PACKAGE-VALIDATED** after source, publication-finalization, and exact-artifact validation.
 
-This status means the source tree, privacy/package validators, publication-finalization simulation, archive extraction validation, and release checksum verification passed for the delivered build. It does **not** mean the integration has been live-verified inside Home Assistant.
+Live status:
+- v0.3.0: **APPLIED / LIVE VALIDATION FAILED** for Integrations-page visibility, setup-state UX, and unresolved install-manifest publication placeholders.
+- v0.3.1: **NOT YET LIVE VERIFIED**. It is the corrective patch and must be installed/restarted, confirmed visible under the normal Integrations page, and taken through Reconfigure before replacing legacy diagnostic logic.
 
-Live Home Assistant state: **not modified by this package build**.
-
-The integration becomes **VERIFIED** only after it is installed on a real Home Assistant instance, configured through the new generic topology flow, and passes the live acceptance test in `DECISIONS_AND_HANDOFF.md`. Existing diagnostic logic should remain current until then.
+No live Home Assistant configuration was modified by the build process.

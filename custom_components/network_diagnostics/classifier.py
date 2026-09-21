@@ -24,6 +24,7 @@ from .observations import Observation, ObservationSet
 from .topology import ancestor_ids, children_map, failed_root_nodes, path_names
 
 HEALTHY = "Healthy"
+SETUP_REQUIRED = "Setup required"
 MONITORING_INCOMPLETE = "Monitoring incomplete"
 MIXED = "Mixed / insufficient evidence"
 MULTIPLE = "Multiple concurrent faults"
@@ -64,6 +65,10 @@ class DiagnosisResult:
     @property
     def monitoring_problem(self) -> bool:
         return self.diagnosis == MONITORING_INCOMPLETE
+
+    @property
+    def setup_required(self) -> bool:
+        return self.diagnosis == SETUP_REQUIRED
 
 
 def _usable(items: Iterable[Observation]) -> list[Observation]:
@@ -541,6 +546,18 @@ def classify(
 ) -> DiagnosisResult:
     """Classify observations with deterministic causal reasoning."""
     degraded_nodes = degraded_nodes or {}
+    if not obs.configured:
+        return DiagnosisResult(
+            diagnosis=SETUP_REQUIRED,
+            summary=(
+                "Network Diagnostics found Uptime Kuma monitors, but the one-time "
+                "diagnostic role/topology setup has not been completed. Open the "
+                "Network Diagnostics integration and choose Reconfigure to finish setup."
+            ),
+            confidence="insufficient",
+            coverage_gaps=tuple(obs.coverage_gaps),
+            unassigned_monitors=tuple(obs.unassigned_monitors),
+        )
     if obs.monitoring_gaps or obs.required_gaps or not obs.provider_fresh:
         gaps = [*obs.required_gaps, *obs.monitoring_gaps]
         if not obs.provider_fresh:

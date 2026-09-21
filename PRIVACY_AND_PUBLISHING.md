@@ -8,7 +8,7 @@ Downloaded Network Diagnostics diagnostics are additionally privacy-reduced: mon
 
 ## Repository ownership
 
-A GitHub repository necessarily has an owner. The release ZIP therefore ships with repository metadata placeholders rather than a personal account name. `tools/finalize_repo.py` fills the GitHub URL/codeowner only after the publisher chooses the desired repository identity.
+A GitHub repository necessarily has an owner. The installable ZIP therefore omits publication-only GitHub documentation, issue-tracker, and codeowner identity rather than embedding either a personal account name or unresolved placeholders. `tools/finalize_repo.py` can add those fields later after the publisher chooses the desired neutral repository identity.
 
 If the requirement is that the project not be publicly associated with a personal GitHub account, publish it from an organization or project-specific account rather than a personal account.
 
@@ -16,7 +16,7 @@ If the requirement is that the project not be publicly associated with a persona
 
 Replacing files in an existing Git repository does **not** remove sensitive data from earlier commits. If an earlier prototype containing deployment-specific information was pushed publicly, meeting a strict "never present in repository history" requirement requires either:
 
-- publishing v0.3.0 from a new clean repository, or
+- publishing v0.3.1 from a new clean repository, or
 - rewriting the old repository history and force-pushing the rewritten history after independently verifying it.
 
 Creating a new clean repository is the simpler and lower-risk option.

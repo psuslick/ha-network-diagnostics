@@ -1,41 +1,50 @@
-Network Diagnostics v0.3.0 — package validation
+Network Diagnostics v0.3.1 — package validation
 
-STATUS: PACKAGE-VALIDATED (not live VERIFIED)
+STATUS TARGET: PACKAGE-VALIDATED (not live VERIFIED)
 
 Acceptance contract:
-  SUCCESS_CRITERIA.md, criteria 1-40.
+  SUCCESS_CRITERIA.md, criteria 1-46.
 
-Validated source behavior:
-  - 50 automated tests passed.
-  - Python source/tests/tools compiled successfully under Python 3.13.
-  - Sidebar JavaScript passed Node syntax validation.
-  - Privacy validator passed.
-  - Repository validator passed with privacy-preserving repository-owner placeholders.
-  - Source manifest regenerated and validated.
-  - No direct raw-network probing client is present in the integration.
-  - Uptime Kuma remains the raw-probe/history authority.
-  - Adaptive response-time samples are RAM-only; compact derived incidents are the only diagnostic history persisted by this integration.
-  - Downloadable diagnostics pseudonymize local monitor/service names and stable monitor identifiers and omit monitored targets.
-  - No Home Assistant Recorder configuration is modified.
-  - No live Home Assistant configuration was modified by this build.
+Live finding carried into this patch:
+  - v0.3.0 was installed and its config entry loaded.
+  - The live integration discovered the available Uptime Kuma monitors.
+  - The first live acceptance failure was the integration/upgrade UX layer:
+      * integration_type=helper kept the loaded entry off the normal Integrations page;
+      * conservative one-time migration appeared as Monitoring incomplete / Monitoring problem;
+      * the install manifest still contained publication placeholders.
 
-Publication-finalization simulation:
-  - Copied the release source to a clean tree.
-  - Ran tools/finalize_repo.py with a synthetic GitHub organization/repository identity.
-  - Confirmed finalized manifest contains no repository-owner placeholders.
-  - Ran the same 50-test suite successfully after finalization.
-  - Re-ran Python compilation, JavaScript syntax, privacy, source-manifest, and repository checks successfully.
+Corrective behavior in v0.3.1:
+  - integration_type=service.
+  - Unconfigured migrated state = Setup required.
+  - Coverage while unconfigured = Not configured.
+  - Monitoring problem remains off for setup-only state.
+  - Setup state cannot open a network incident.
+  - Panel/Repair copy directs the user to Settings → Devices & services → Integrations → Network Diagnostics → Reconfigure and reports discovered Kuma monitor count.
+  - Installable manifest has no unresolved publication placeholders and no personal publisher identity.
+  - Publication metadata remains an explicit later finalization step.
+
+Preserved architecture:
+  - Uptime Kuma is the raw probe/history authority.
+  - Network Diagnostics performs no duplicate network probes.
+  - Generic explicit topology/roles; no vendor/provider deployment profile restored.
+  - Kuma Tags are optional setup hints, not runtime authority.
+  - Public HA registries/states only; no Uptime Kuma private runtime_data access.
+  - Adaptive response-time samples are bounded RAM-only.
+  - Persistent Network Diagnostics history is compact derived incident data only.
+  - Downloaded diagnostics remain privacy-reduced.
+  - Home Assistant Recorder configuration is not modified.
+
+Validation completed before exact artifact build:
+  - 52 automated tests pass on the source tree.
+  - Python source/tests/tools compile successfully.
+  - Sidebar JavaScript passes Node syntax validation.
+  - Privacy validator passes.
+  - Repository/source-manifest validation passes.
+  - Publication-finalization simulation adds synthetic neutral GitHub metadata, then the same 52 tests, privacy check, Python compile, JavaScript syntax check, source-manifest check, and repository check all pass.
 
 Automatic retry history:
-  1. The first publication-finalization simulation exposed a validation-test defect: one package test required repository placeholders to remain present, so a correctly finalized manifest failed the test. The test was corrected to validate both the privacy-preserving distributable state and the finalized publication state. The full source and finalization validation chains were rerun successfully.
-  2. An initial simulation harness check searched the entire validator source for the placeholder token and therefore matched the validator's own constant. The harness was corrected to inspect the finalized manifest itself. The finalization simulation then passed.
-
-Refined acceptance criterion added during final build:
-  - Criterion 40 requires the same automated suite to pass both before and after repository metadata finalization. Finalizing publisher metadata must not change product behavior or invalidate tests.
-
-Release artifact checks:
-  - The delivered ZIP is extracted into a clean directory and the same tests/package/privacy/syntax checks are run against the extracted bytes.
-  - SHA-256 is calculated only after the final ZIP is built and verified with sha256sum -c. The checksum itself is distributed beside the ZIP, so it is not embedded in this file.
+  1. The first source repository-check attempt failed because the prior pytest/compile runs left __pycache__/.pytest_cache files in the staged tree. These are build artifacts, not source defects. The staged tree was cleaned, the source manifest regenerated, and repository validation passed.
+  2. The first publication-finalization simulation failed because finalize_repo.py's import of the manifest generator created tools/__pycache__ before the repository cleanliness check. The simulation was rerun with bytecode disabled plus explicit cleanup. The finalized tree then passed the complete validation chain.
 
 Important boundary:
-  PACKAGE-VALIDATED establishes repository/package integrity only. Live Home Assistant API/runtime compatibility and real diagnostic behavior remain unverified until installation and the explicit live acceptance test.
+  PACKAGE-VALIDATED establishes package/repository integrity and regression coverage for the live defects found in v0.3.0. v0.3.1 must still be installed/restarted and checked in the real Home Assistant UI before it can be marked VERIFIED. No live Home Assistant configuration was modified by this build.

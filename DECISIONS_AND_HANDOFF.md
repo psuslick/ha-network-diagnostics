@@ -1,8 +1,8 @@
-# v0.3.0 decisions and handoff
+# v0.3.1 decisions and handoff
 
 ## Status
 
-**PROPOSED / PACKAGE-VALIDATED target.** Building this repository does not change a live Home Assistant installation. Existing diagnostic logic remains current until v0.3.0 is installed and live-verified.
+**PROPOSED / PACKAGE-VALIDATED target.** Building this repository does not change a live Home Assistant installation. v0.3.0 was installed and failed the first live UX acceptance check; v0.3.1 is the corrective patch and remains unverified until installed and exercised live.
 
 ## Major architecture decisions
 
@@ -63,3 +63,18 @@ After repository-side validation and installation:
 ## Rollback
 
 Uninstall/disable Network Diagnostics or restore the previous HACS version. The integration does not modify Kuma monitors, Recorder configuration, existing automations/helpers, or network devices, so package rollback does not require reversing those systems.
+
+
+## v0.3.0 live acceptance failure and v0.3.1 corrective decisions
+
+Live Home Assistant inspection established that v0.3.0 itself loaded, created its entities, and discovered all available Kuma monitors, but its manifest classified Network Diagnostics as an HA `helper`. That kept the loaded config entry off the normal Integrations page, making the intended Reconfigure workflow effectively inaccessible. The migrated entry also presented `Monitoring incomplete`/`Monitoring problem` even though the actual condition was simply that one-time generic topology setup had not been completed. Finally, the install artifact still contained publisher placeholders.
+
+v0.3.1 therefore:
+
+- changes `integration_type` to `service`;
+- keeps conservative explicit migration, but reports the unconfigured migration state as `Setup required`, not a monitoring/network failure;
+- reports Coverage as `Not configured` until role/topology setup is complete;
+- keeps `Monitoring problem` off while merely unconfigured;
+- makes the Repair/panel instructions explicitly direct the user to the visible integration's Reconfigure flow;
+- removes unresolved publisher placeholders from the installable manifest; and
+- preserves the generic/private-data-free RCA model introduced in v0.3.0.

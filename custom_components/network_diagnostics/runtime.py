@@ -203,12 +203,19 @@ class NetworkDiagnosticsRuntime:
             for item in self.discovery.bindings
         }
         self.discovery = configured_bindings(self.hass, dict(self.entry.data))
-        warnings, blockers = validate_bindings(self.discovery.bindings)
-        capabilities = coverage_capabilities(self.discovery.bindings)
-        self.discovery.coverage_capabilities = capabilities
-        self.discovery.coverage_gaps.extend(warnings)
-        self.discovery.coverage_gaps.extend(coverage_gaps(capabilities))
-        self.discovery.required_gaps.extend(blockers)
+        if self.discovery.configured:
+            warnings, blockers = validate_bindings(self.discovery.bindings)
+            capabilities = coverage_capabilities(self.discovery.bindings)
+            self.discovery.coverage_capabilities = capabilities
+            self.discovery.coverage_gaps.extend(warnings)
+            self.discovery.coverage_gaps.extend(coverage_gaps(capabilities))
+            self.discovery.required_gaps.extend(blockers)
+        else:
+            # An intentionally unconfigured migration state is setup work, not a
+            # failed evidence model. Do not flood the user with twelve coverage
+            # failures before they have selected any monitors.
+            self.discovery.coverage_capabilities = {}
+            self.discovery.coverage_gaps = []
         self.discovery.coverage_gaps = list(dict.fromkeys(self.discovery.coverage_gaps))
         self.discovery.required_gaps = list(dict.fromkeys(self.discovery.required_gaps))
         self.discovery.limitations = [
@@ -329,6 +336,7 @@ class NetworkDiagnosticsRuntime:
         self, now: datetime
     ) -> tuple[ObservationSet, dict[str, BaselineAssessment]]:
         result = ObservationSet(
+            configured=self.discovery.configured,
             coverage_gaps=list(self.discovery.coverage_gaps),
             required_gaps=list(self.discovery.required_gaps),
             unassigned_monitors=list(self.discovery.unassigned_monitors),
@@ -475,6 +483,9 @@ class NetworkDiagnosticsRuntime:
             bool(not self.discovery.configured),
             severity=ir.IssueSeverity.WARNING,
             translation_key="configuration_required",
+            placeholders={
+                "count": str(len(self.discovery.available_monitors)),
+            },
         )
         self._set_issue(
             ISSUE_CONFIGURED_MONITOR_MISSING,
@@ -549,6 +560,11 @@ class NetworkDiagnosticsRuntime:
         self, now: datetime, snapshot: RuntimeSnapshot, observations: ObservationSet
     ) -> None:
         result = snapshot.diagnosis
+        if result.setup_required:
+            # One-time configuration/migration state is not a network incident.
+            self._pending_abnormal = None
+            self._pending_recovery_since = None
+            return
         if result.healthy:
             self._pending_abnormal = None
             if self.active_incident is None:

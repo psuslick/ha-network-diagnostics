@@ -147,10 +147,12 @@ class NetworkDiagnosticsPanel extends HTMLElement {
     const discovery = data?.discovery || {};
     const diagnosis = d?.diagnosis || (this._loading ? "Analyzing…" : "Initializing");
     const confidence = d?.confidence || "unknown";
-    const statusClass = diagnosis === "Healthy" ? "good" : diagnosis === "Monitoring incomplete" ? "warn" : diagnosis === "Initializing" ? "" : "bad";
+    const statusClass = diagnosis === "Healthy" ? "good" : (diagnosis === "Monitoring incomplete" || diagnosis === "Setup required") ? "warn" : diagnosis === "Initializing" ? "" : "bad";
     const active = data?.active_incident;
     const fresh = current?.freshness?.fresh;
-    const freshLabel = fresh === true ? "fresh" : fresh === false ? "stale/unavailable" : "unknown";
+    const freshLabel = !discovery.configured
+      ? "not applicable until setup"
+      : fresh === true ? "fresh" : fresh === false ? "stale/unavailable" : "unknown";
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -199,9 +201,9 @@ class NetworkDiagnosticsPanel extends HTMLElement {
         <section class="hero">
           <div class="card"><div class="muted">Current diagnosis</div><div class="big accent ${statusClass}">${this._escape(diagnosis)}</div><div>${this._escape(d?.summary || "Waiting for the first analysis pass.")}</div>${current?.at ? `<div class="muted">Analyzed ${this._escape(current.at)}</div>` : ""}</div>
           <div class="card"><div class="muted">Evidence strength</div><div class="big">${this._escape(confidence)}</div><div class="muted">High / medium / low / insufficient. No pseudo-probability.</div></div>
-          <div class="card"><div class="muted">Coverage</div><div class="big">${d?.coverage_gaps?.length ? "Partial" : "Complete"}</div><div class="muted">Kuma evidence: ${freshLabel}</div></div>
+          <div class="card"><div class="muted">Coverage</div><div class="big">${!discovery.configured ? "Not configured" : d?.coverage_gaps?.length ? "Partial" : "Complete"}</div><div class="muted">Kuma evidence: ${freshLabel}</div></div>
         </section>
-        ${!discovery.configured ? `<section class="card"><h2>Setup required</h2><p>Reconfigure Network Diagnostics under Settings → Devices & services to assign Kuma monitors to roles and define parent relationships. Kuma Tags can provide setup hints, but are not required.</p></section>` : ""}
+        ${!discovery.configured ? `<section class="card"><h2>One-time setup required</h2><p>Network Diagnostics is installed and has discovered ${discovery.available_monitor_count || 0} Uptime Kuma monitors. Open <strong>Settings → Devices & services → Integrations → Network Diagnostics</strong> and choose <strong>Reconfigure</strong> to assign diagnostic roles and parent relationships. This is setup state, not a network or monitoring failure. Kuma Tags can provide setup hints, but are not required.</p></section>` : ""}
         ${active ? `<section class="card active"><h2>Active incident</h2><strong>${this._escape(active.current_diagnosis)}</strong><div class="muted">Started ${this._escape(active.started_at)} · fingerprint ${this._escape(active.fingerprint)}</div><p>${this._escape(active.summary)}</p></section>` : ""}
         <section class="grid2">
           <div class="card"><h2>Root-cause analysis</h2>${this._rootCauses(d?.root_causes || [])}${this._list("Supporting evidence", d?.evidence || [], "good")}${this._list("Contradicting alternatives", d?.contradictions || [], "warn")}${this._list("Downstream effects", d?.downstream || [])}${this._list("Monitoring gaps", d?.monitoring_gaps || [], "bad")}${this._list("Coverage gaps", d?.coverage_gaps || [], "warn")}${this._list("Known limitations", discovery.limitations || [], "warn")}</div>

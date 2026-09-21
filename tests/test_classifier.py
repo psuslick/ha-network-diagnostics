@@ -3,6 +3,7 @@ from custom_components.network_diagnostics.classifier import (
     HEALTHY,
     MONITORING_INCOMPLETE,
     MULTIPLE,
+    SETUP_REQUIRED,
     classify,
 )
 from custom_components.network_diagnostics.const import (
@@ -33,6 +34,26 @@ def assessment(state="normal", *, sustained=False, median=5.0, ratio=1.0):
         sustained=sustained,
         abnormal_seconds=120.0 if sustained else None,
     )
+
+
+
+
+def test_unconfigured_migration_state_is_setup_required_not_monitoring_failure(make_set):
+    result = classify(
+        make_set(
+            [],
+            configured=False,
+            provider_fresh=False,
+            required_gaps=["Topology has not been configured"],
+            unassigned_monitors=["Monitor A", "Monitor B"],
+        )
+    )
+    assert result.diagnosis == SETUP_REQUIRED
+    assert result.monitoring_problem is False
+    assert result.setup_required is True
+    assert result.confidence == "insufficient"
+    assert "Reconfigure" in result.summary
+    assert result.unassigned_monitors == ("Monitor A", "Monitor B")
 
 
 def test_healthy_with_partial_coverage_is_not_monitoring_incomplete(

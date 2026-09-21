@@ -109,6 +109,8 @@ class CoverageSensor(NetworkDiagnosticsEntity, SensorEntity):
     def native_value(self) -> str:
         if not self.runtime.current:
             return "Initializing"
+        if not self.runtime.current.discovery.get("configured"):
+            return "Not configured"
         return (
             "Complete"
             if not self.runtime.current.diagnosis.coverage_gaps
