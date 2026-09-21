@@ -5,20 +5,23 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable
 
+from .baseline import BaselineAssessment
 from .const import (
     ROLE_DNS_LOCAL,
     ROLE_DNS_NEUTRAL,
+    ROLE_FIXED_CLIENT,
     ROLE_GATEWAY,
-    ROLE_HTTPS,
-    ROLE_IPV4,
-    ROLE_IPV6,
+    ROLE_HTTPS_CONTROL,
+    ROLE_IPV4_CONTROL,
+    ROLE_IPV6_CONTROL,
     ROLE_LAN_CONTROL,
-    ROLE_MESH,
-    ROLE_MESH_CHILD,
+    ROLE_MESH_NODE,
+    ROLE_NETWORK_NODE,
     ROLE_SERVICE_DNS,
     ROLE_SERVICE_PATH,
 )
 from .observations import Observation, ObservationSet
+from .topology import ancestor_ids, children_map, failed_root_nodes, path_names
 
 HEALTHY = "Healthy"
 MONITORING_INCOMPLETE = "Monitoring incomplete"
@@ -28,8 +31,6 @@ MULTIPLE = "Multiple concurrent faults"
 
 @dataclass(frozen=True, slots=True)
 class RootCause:
-    """One supportable root-cause hypothesis."""
-
     name: str
     domain: str
     confidence: str
@@ -42,8 +43,6 @@ class RootCause:
 
 @dataclass(frozen=True, slots=True)
 class DiagnosisResult:
-    """Result of one analysis pass."""
-
     diagnosis: str
     summary: str
     confidence: str
@@ -76,11 +75,6 @@ def _all_down(items: Iterable[Observation]) -> bool:
     return bool(values) and all(item.status is False for item in values)
 
 
-def _all_up(items: Iterable[Observation]) -> bool:
-    values = _usable(items)
-    return bool(values) and all(item.status is True for item in values)
-
-
 def _any_up(items: Iterable[Observation]) -> bool:
     return any(item.status is True for item in items)
 
@@ -90,85 +84,48 @@ def _any_down(items: Iterable[Observation]) -> bool:
 
 
 def _names(items: Iterable[Observation]) -> tuple[str, ...]:
-    return tuple(item.binding.label or item.binding.name for item in items)
+    return tuple(item.binding.name for item in items)
 
 
 def _failed_names(obs: ObservationSet) -> tuple[str, ...]:
-    return tuple(
-        item.binding.label or item.binding.name
-        for item in obs.observations
-        if item.status is False
-    )
+    return tuple(item.binding.name for item in obs.observations if item.status is False)
 
 
 def _healthy_names(obs: ObservationSet) -> tuple[str, ...]:
-    return tuple(
-        item.binding.label or item.binding.name
-        for item in obs.observations
-        if item.status is True
-    )
-
-
-def _core_health_gaps(obs: ObservationSet) -> list[str]:
-    """Return evidence gaps that prevent an all-clear Healthy verdict."""
-    gaps = list(obs.required_gaps)
-    if not obs.by_role(ROLE_GATEWAY):
-        gaps.append("No gateway monitor is assigned")
-    if not (obs.by_role(ROLE_IPV4) or obs.by_role(ROLE_IPV6)):
-        gaps.append("No external IPv4 or IPv6 reachability control is assigned")
-    if not obs.by_role(ROLE_DNS_NEUTRAL):
-        gaps.append("No neutral DNS control is assigned")
-    if not obs.by_role(ROLE_HTTPS):
-        gaps.append("No HTTPS control is assigned")
-    return list(dict.fromkeys(gaps))
-
-
-def _coverage(obs: ObservationSet) -> list[str]:
-    gaps = list(obs.coverage_gaps)
-    gaps.extend(_core_health_gaps(obs))
-    return list(dict.fromkeys(gaps))
+    return tuple(item.binding.name for item in obs.observations if item.status is True)
 
 
 def _result_from_causes(obs: ObservationSet, causes: list[RootCause]) -> DiagnosisResult:
-    coverage_gaps = tuple(_coverage(obs))
+    coverage = tuple(obs.coverage_gaps)
     failed = _failed_names(obs)
     unaffected = _healthy_names(obs)
     if not causes:
         if failed:
             return DiagnosisResult(
                 diagnosis=MIXED,
-                summary="One or more monitors are failing, but the available independent controls do not support a single causal explanation.",
+                summary=(
+                    "One or more configured monitors are failing, but the available "
+                    "independent evidence does not support a single causal explanation."
+                ),
                 confidence="low",
                 evidence=tuple(f"Failed: {name}" for name in failed),
                 unaffected=unaffected,
                 failed_controls=failed,
                 affected_components=failed,
-                coverage_gaps=coverage_gaps,
-                unassigned_monitors=tuple(obs.unassigned_monitors),
-            )
-        required_gaps = tuple(_core_health_gaps(obs))
-        if required_gaps:
-            return DiagnosisResult(
-                diagnosis=MONITORING_INCOMPLETE,
-                summary=(
-                    "No active failure is detected in the available evidence, but required "
-                    "diagnostic coverage is missing, so Network Diagnostics will not claim "
-                    "the network is healthy."
-                ),
-                confidence="insufficient",
-                evidence=("Available assigned monitors are not reporting a failure.",),
-                unaffected=unaffected,
-                monitoring_gaps=required_gaps,
-                coverage_gaps=coverage_gaps,
+                coverage_gaps=coverage,
                 unassigned_monitors=tuple(obs.unassigned_monitors),
             )
         return DiagnosisResult(
             diagnosis=HEALTHY,
-            summary="All required assigned diagnostic monitors are healthy.",
-            confidence="high" if not coverage_gaps else "medium",
-            evidence=("No assigned diagnostic monitor is reporting a failure.",),
+            summary=(
+                "All configured diagnostic monitors are healthy."
+                if not coverage
+                else "All configured diagnostic monitors are healthy; the coverage report lists fault classes that are not yet distinguishable."
+            ),
+            confidence="high" if not coverage else "medium",
+            evidence=("No configured diagnostic monitor is reporting a failure.",),
             unaffected=unaffected,
-            coverage_gaps=coverage_gaps,
+            coverage_gaps=coverage,
             unassigned_monitors=tuple(obs.unassigned_monitors),
         )
 
@@ -176,9 +133,11 @@ def _result_from_causes(obs: ObservationSet, causes: list[RootCause]) -> Diagnos
         cause = causes[0]
         return DiagnosisResult(
             diagnosis=cause.name,
-            summary=(
-                f"{cause.name}. "
-                + (cause.supporting[0] if cause.supporting else "The observed failure pattern matches this fault domain.")
+            summary=f"{cause.name}. "
+            + (
+                cause.supporting[0]
+                if cause.supporting
+                else "The observed failure pattern matches this fault domain."
             ),
             confidence=cause.confidence,
             evidence=cause.supporting,
@@ -187,15 +146,16 @@ def _result_from_causes(obs: ObservationSet, causes: list[RootCause]) -> Diagnos
             unaffected=unaffected,
             failed_controls=failed,
             affected_components=cause.affected,
-            coverage_gaps=coverage_gaps,
+            coverage_gaps=coverage,
             unassigned_monitors=tuple(obs.unassigned_monitors),
             root_causes=(cause,),
         )
 
-    names = "; ".join(cause.name for cause in causes)
     return DiagnosisResult(
         diagnosis=MULTIPLE,
-        summary=f"Multiple independent fault domains are present: {names}.",
+        summary="Multiple independent fault domains are present: "
+        + "; ".join(cause.name for cause in causes)
+        + ".",
         confidence="high" if all(cause.confidence == "high" for cause in causes) else "medium",
         evidence=tuple(item for cause in causes for item in cause.supporting),
         contradictions=tuple(item for cause in causes for item in cause.contradicting),
@@ -203,101 +163,70 @@ def _result_from_causes(obs: ObservationSet, causes: list[RootCause]) -> Diagnos
         unaffected=unaffected,
         failed_controls=failed,
         affected_components=tuple(item for cause in causes for item in cause.affected),
-        coverage_gaps=coverage_gaps,
+        coverage_gaps=coverage,
         unassigned_monitors=tuple(obs.unassigned_monitors),
         root_causes=tuple(causes),
     )
 
 
-def classify(obs: ObservationSet, *, degraded_mesh: set[str] | None = None) -> DiagnosisResult:
-    """Classify current observations using explicit causal dependencies.
-
-    The algorithm intentionally favors the smallest upstream explanation that
-    accounts for downstream failures while independent controls remain healthy.
-    It does not emit numerical pseudo-probabilities.
-    """
-    degraded_mesh = degraded_mesh or set()
-    coverage_gaps = tuple(_coverage(obs))
-
-    if obs.monitoring_gaps or not obs.provider_fresh:
-        gaps = list(obs.monitoring_gaps)
-        if not obs.provider_fresh:
-            age = (
-                f" ({obs.provider_age_seconds:.0f}s since the oldest required Kuma source heartbeat)"
-                if obs.provider_age_seconds is not None
-                else ""
-            )
-            gaps.append(f"Uptime Kuma data feed is stale or unavailable{age}")
-        return DiagnosisResult(
-            diagnosis=MONITORING_INCOMPLETE,
-            summary="Required evidence is missing or stale, so Network Diagnostics will not claim the network is healthy or assign a root cause.",
-            confidence="insufficient",
-            monitoring_gaps=tuple(dict.fromkeys(gaps)),
-            coverage_gaps=coverage_gaps,
-            unassigned_monitors=tuple(obs.unassigned_monitors),
-            failed_controls=_failed_names(obs),
-            unaffected=_healthy_names(obs),
-        )
-
+def _topology_causes(
+    obs: ObservationSet,
+    baseline_assessments: dict[str, BaselineAssessment],
+) -> tuple[list[RootCause], bool]:
+    """Return local topology causes and whether a hard gateway root suppresses externals."""
+    causes: list[RootCause] = []
     gateway = obs.by_role(ROLE_GATEWAY)
     lan = obs.by_role(ROLE_LAN_CONTROL)
-    mesh = obs.by_role(ROLE_MESH)
-    mesh_children = obs.by_role(ROLE_MESH_CHILD)
-    ipv4 = obs.by_role(ROLE_IPV4)
-    ipv6 = obs.by_role(ROLE_IPV6)
-    dns_neutral = obs.by_role(ROLE_DNS_NEUTRAL)
-    dns_local = obs.by_role(ROLE_DNS_LOCAL)
-    https = obs.by_role(ROLE_HTTPS)
+    external = [*obs.by_role(ROLE_IPV4_CONTROL), *obs.by_role(ROLE_IPV6_CONTROL)]
+    bindings = [item.binding for item in obs.observations]
+    lookup_obs = {item.binding.monitor_id: item for item in obs.observations}
+    child_lookup = children_map(bindings)
 
-    causes: list[RootCause] = []
-
-    # Local gateway/LAN root cause suppresses external symptoms as downstream.
     gateway_down = _all_down(gateway)
-    gateway_management_only = False
     if gateway_down:
         downstream_failed = [
-            item.binding.label or item.binding.name
+            item.binding.name
             for item in obs.observations
             if item.status is False and item.binding.role != ROLE_LAN_CONTROL
         ]
-        if lan and _any_up(lan):
-            external_healthy = _any_up((*obs.by_role(ROLE_IPV4), *obs.by_role(ROLE_IPV6)))
-            if external_healthy:
-                causes.append(
-                    RootCause(
-                        "Gateway management/reachability failure",
-                        "local",
-                        "medium",
-                        supporting=(
-                            "The gateway monitor is down while an independent wired LAN control and external Internet reachability remain healthy.",
-                        ),
-                        contradicting=(
-                            "A complete router/forwarding failure is contradicted by healthy external Internet reachability from Home Assistant.",
-                        ),
-                        affected=_names(gateway),
-                        causal_path=("Home Assistant", "gateway management/reachability"),
-                    )
+        if _any_up(external):
+            support = (
+                "The Gateway monitor is down while external Internet reachability remains healthy."
+            )
+            if lan and _any_up(lan):
+                support = (
+                    "The Gateway monitor is down while an independent LAN Control and external Internet reachability remain healthy."
                 )
-                # Forwarding to the Internet and an independent LAN control still
-                # work, so the failed gateway management probe does not explain an
-                # unrelated mesh/DNS/service failure. Continue looking for truly
-                # concurrent faults rather than returning early.
-                gateway_management_only = True
-            else:
-                causes.append(
-                    RootCause(
-                        "Gateway/router failure",
-                        "local",
-                        "high",
-                        supporting=(
-                            "The gateway monitor is down while an independent wired LAN control remains reachable.",
-                        ),
-                        downstream=tuple(name for name in downstream_failed if name not in _names(gateway)),
-                        affected=_names(gateway),
-                        causal_path=("gateway", "downstream network services"),
-                    )
+            causes.append(
+                RootCause(
+                    "Gateway management/reachability failure",
+                    "local",
+                    "high" if lan and _any_up(lan) else "medium",
+                    supporting=(support,),
+                    contradicting=(
+                        "A complete gateway forwarding failure is contradicted by healthy external Internet reachability from Home Assistant.",
+                    ),
+                    affected=_names(gateway),
+                    causal_path=("Home Assistant", "Gateway management/reachability"),
                 )
-                return _result_from_causes(obs, causes)
+            )
+        elif lan and _any_up(lan):
+            causes.append(
+                RootCause(
+                    "Gateway/router failure",
+                    "local",
+                    "high",
+                    supporting=(
+                        "The Gateway monitor is down while an independent LAN Control remains reachable.",
+                    ),
+                    downstream=tuple(
+                        name for name in downstream_failed if name not in _names(gateway)
+                    ),
+                    affected=_names(gateway),
+                    causal_path=("Gateway", "downstream network services"),
+                )
+            )
+            return causes, True
         elif lan and _all_down(lan):
             causes.append(
                 RootCause(
@@ -305,32 +234,37 @@ def classify(obs: ObservationSet, *, degraded_mesh: set[str] | None = None) -> D
                     "local",
                     "high",
                     supporting=(
-                        "The gateway and independent wired LAN control are both unreachable from Home Assistant.",
+                        "The Gateway and independent LAN Control are both unreachable from Home Assistant.",
                     ),
                     downstream=tuple(downstream_failed),
                     affected=tuple((*_names(gateway), *_names(lan))),
-                    causal_path=("Home Assistant local path", "gateway", "downstream services"),
+                    causal_path=(
+                        "Home Assistant local path",
+                        "Gateway",
+                        "downstream services",
+                    ),
                 )
             )
-            return _result_from_causes(obs, causes)
+            return causes, True
         else:
             causes.append(
                 RootCause(
                     "Gateway / local path failure",
                     "local",
                     "medium",
-                    supporting=("The gateway is unreachable, but no independent wired LAN control is available to separate router failure from the HA-to-LAN path.",),
+                    supporting=(
+                        "The Gateway is unreachable and no independent healthy control is available to localize the failure further.",
+                    ),
                     downstream=tuple(downstream_failed),
                     affected=_names(gateway),
-                    causal_path=("gateway or HA local path", "downstream services"),
+                    causal_path=(
+                        "Gateway or Home Assistant local path",
+                        "downstream services",
+                    ),
                 )
             )
-            return _result_from_causes(obs, causes)
+            return causes, True
 
-    # A dedicated wired LAN control is intentionally an independent endpoint.
-    # If it alone fails while the gateway remains reachable, localize that
-    # observation rather than calling the whole LAN unhealthy or falling back to
-    # an unexplained mixed state.
     if not gateway_down and lan and _any_down(lan):
         failed_lan = [item for item in lan if item.status is False]
         healthy_lan = [item for item in lan if item.status is True]
@@ -340,138 +274,306 @@ def classify(obs: ObservationSet, *, degraded_mesh: set[str] | None = None) -> D
                 "local-control",
                 "medium",
                 supporting=(
-                    "A wired LAN control is unreachable while the gateway remains reachable; this does not support a whole-LAN outage.",
+                    "A LAN Control is unreachable while the Gateway remains reachable; this does not support a whole-LAN outage.",
                 ),
                 contradicting=(
-                    "A broad local-LAN failure is contradicted by the reachable gateway.",
+                    "A broad local-LAN failure is contradicted by the reachable Gateway.",
                 ),
                 affected=_names(failed_lan),
-                causal_path=("gateway", "wired LAN control endpoint/path"),
+                causal_path=("Gateway", "LAN Control endpoint/path"),
             )
         )
 
-    # Mesh failures are localized when the gateway itself is reachable. If only
-    # gateway management/reachability is broken, healthy external + wired-LAN
-    # evidence still shows that the forwarding path is viable enough to treat a
-    # mesh-node failure as a separate finding.
-    down_mesh = [item for item in mesh if item.status is False]
-    if down_mesh:
-        if len(down_mesh) == len(_usable(mesh)) and len(down_mesh) > 1:
+    fixed_failures_by_parent: dict[str | None, list[Observation]] = {}
+    mesh_roots_by_parent: dict[str | None, list[tuple[Observation, list[Observation]]]] = {}
+    for item, failed_descendants in failed_root_nodes(obs):
+        if item.binding.role == ROLE_GATEWAY:
+            continue
+        if item.binding.role == ROLE_FIXED_CLIENT:
+            fixed_failures_by_parent.setdefault(item.binding.parent_id, []).append(item)
+            continue
+        if item.binding.role == ROLE_MESH_NODE:
+            mesh_roots_by_parent.setdefault(item.binding.parent_id, []).append(
+                (item, failed_descendants)
+            )
+            continue
+        path = path_names(item.binding.monitor_id, bindings)
+        parent = lookup_obs.get(item.binding.parent_id or "")
+        confidence = "high" if parent and parent.status is True else "medium"
+        causes.append(
+            RootCause(
+                f"{item.binding.name} unreachable",
+                "topology",
+                confidence,
+                supporting=(
+                    f"{item.binding.name} is down"
+                    + (
+                        f" while its parent {parent.binding.name} remains reachable."
+                        if parent and parent.status is True
+                        else "."
+                    ),
+                ),
+                downstream=_names(failed_descendants),
+                affected=(item.binding.name,),
+                causal_path=path or (item.binding.name,),
+            )
+        )
+
+    for parent_id, pairs in mesh_roots_by_parent.items():
+        items = [pair[0] for pair in pairs]
+        failed_descendants = [desc for _item, descs in pairs for desc in descs]
+        parent = lookup_obs.get(parent_id or "")
+        if len(items) > 1:
+            parent_name = parent.binding.name if parent else "upstream parent"
             causes.append(
                 RootCause(
-                    "Mesh satellite/AP layer failure",
-                    "mesh",
-                    "high",
+                    "Mesh / wireless layer failure",
+                    "topology",
+                    "high" if parent and parent.status is True else "medium",
                     supporting=(
-                        "Multiple mesh-node monitors are down while the gateway remains reachable.",
+                        f"Multiple Mesh / Wireless Nodes are down while {parent_name} remains reachable."
+                        if parent and parent.status is True
+                        else "Multiple Mesh / Wireless Nodes are down under the same configured parent.",
                     ),
-                    affected=_names(down_mesh),
-                    causal_path=("gateway", "mesh layer"),
+                    downstream=_names(failed_descendants),
+                    affected=_names(items),
+                    causal_path=(parent_name, "Mesh / wireless layer"),
                 )
             )
         else:
-            for item in down_mesh:
-                label = item.binding.label or item.binding.name
-                causes.append(
-                    RootCause(
-                        f"{label} unreachable",
-                        "mesh",
-                        "high",
-                        supporting=(
-                            (
-                                f"{label} is down while gateway forwarding remains viable despite the separate gateway management/reachability failure."
-                                if gateway_management_only
-                                else f"{label} is down while the gateway remains reachable."
-                            ),
+            item = items[0]
+            path = path_names(item.binding.monitor_id, bindings)
+            causes.append(
+                RootCause(
+                    f"{item.binding.name} unreachable",
+                    "topology",
+                    "high" if parent and parent.status is True else "medium",
+                    supporting=(
+                        f"{item.binding.name} is down"
+                        + (
+                            f" while its parent {parent.binding.name} remains reachable."
+                            if parent and parent.status is True
+                            else "."
                         ),
-                        affected=(label,),
-                        causal_path=("gateway", label),
-                    )
+                    ),
+                    downstream=_names(failed_descendants),
+                    affected=(item.binding.name,),
+                    causal_path=path or (item.binding.name,),
                 )
+            )
 
-    # Optional fixed downstream controls can prove that traffic through a mesh
-    # node is impaired even while the node's own management IP still answers.
-    # A single child failure remains ambiguous between the child and its path;
-    # two independent children behind the same node support a stronger path fault.
-    mesh_by_label = {
-        (item.binding.label or item.binding.name).casefold(): item for item in mesh
-    }
-    for group in sorted(
-        {item.binding.group for item in mesh_children if item.binding.group},
-        key=str.casefold,
-    ):
-        children = [
-            item
-            for item in mesh_children
-            if (item.binding.group or "").casefold() == group.casefold()
-        ]
-        failed_children = [item for item in children if item.status is False]
-        if not failed_children:
+    for parent_id, failed_clients in fixed_failures_by_parent.items():
+        parent = lookup_obs.get(parent_id or "")
+        if parent and parent.status is False:
             continue
-        parent = mesh_by_label.get(group.casefold())
-        if parent is not None and parent.status is False:
-            # The parent mesh-node root cause already explains these descendants.
-            for idx, cause in enumerate(causes):
-                if cause.domain != "mesh":
-                    continue
-                if (parent.binding.label or parent.binding.name) not in cause.affected:
-                    continue
-                causes[idx] = RootCause(
-                    cause.name,
-                    cause.domain,
-                    cause.confidence,
-                    supporting=cause.supporting,
-                    contradicting=cause.contradicting,
-                    downstream=tuple((*cause.downstream, *_names(failed_children))),
-                    affected=cause.affected,
-                    causal_path=cause.causal_path,
-                )
-            continue
-        if parent is not None and parent.status is True:
-            if len(failed_children) >= 2:
+        if parent and parent.status is True:
+            if len(failed_clients) >= 2:
                 causes.append(
                     RootCause(
-                        f"{group} downstream/backhaul path failure",
-                        "mesh",
+                        f"{parent.binding.name} downstream/forwarding path failure",
+                        "topology",
                         "high",
                         supporting=(
-                            f"Multiple fixed downstream controls behind {group} are down while the mesh node and gateway remain reachable.",
+                            f"Multiple Fixed Downstream Clients behind {parent.binding.name} are down while the parent remains reachable.",
                         ),
                         contradicting=(
-                            f"A complete {group} node outage is contradicted by the node itself remaining reachable.",
+                            f"A complete {parent.binding.name} node outage is contradicted by the node itself remaining reachable.",
                         ),
-                        affected=_names(failed_children),
-                        causal_path=("gateway", group, "downstream/backhaul path"),
+                        affected=_names(failed_clients),
+                        causal_path=(
+                            *path_names(parent.binding.monitor_id, bindings),
+                            "downstream/forwarding path",
+                        ),
                     )
                 )
             else:
                 causes.append(
                     RootCause(
-                        f"{group} downstream path/client failure",
-                        "mesh",
+                        f"{parent.binding.name} downstream path/client failure",
+                        "topology",
                         "medium",
                         supporting=(
-                            f"A fixed downstream control behind {group} is down while the mesh node and gateway remain reachable.",
+                            f"A Fixed Downstream Client behind {parent.binding.name} is down while the parent remains reachable.",
                         ),
                         contradicting=(
-                            "One downstream control cannot distinguish a client failure from the forwarding/backhaul path by itself.",
+                            "One downstream client cannot distinguish a client failure from the forwarding path by itself.",
                         ),
-                        affected=_names(failed_children),
-                        causal_path=("gateway", group, "downstream path or client"),
+                        affected=_names(failed_clients),
+                        causal_path=(
+                            *path_names(parent.binding.monitor_id, bindings),
+                            "downstream path or client",
+                        ),
+                    )
+                )
+        else:
+            for item in failed_clients:
+                causes.append(
+                    RootCause(
+                        f"{item.binding.name} endpoint/path failure",
+                        "topology",
+                        "medium",
+                        supporting=(
+                            f"{item.binding.name} is down and no healthy configured parent is available to localize the path further.",
+                        ),
+                        affected=(item.binding.name,),
+                        causal_path=(item.binding.name,),
                     )
                 )
 
-    for label in sorted(degraded_mesh):
+    sustained = {
+        monitor_id: assessment
+        for monitor_id, assessment in baseline_assessments.items()
+        if assessment.sustained
+        and (item := lookup_obs.get(monitor_id)) is not None
+        and item.status is True
+    }
+    root_degraded: dict[str, BaselineAssessment] = {}
+    for monitor_id, assessment in sustained.items():
+        if any(ancestor in sustained for ancestor in ancestor_ids(monitor_id, bindings)):
+            continue
+        root_degraded[monitor_id] = assessment
+
+    consumed: set[str] = set()
+    degraded_mesh_by_parent: dict[str | None, list[str]] = {}
+    for monitor_id in root_degraded:
+        item = lookup_obs[monitor_id]
+        if item.binding.role == ROLE_MESH_NODE:
+            degraded_mesh_by_parent.setdefault(item.binding.parent_id, []).append(monitor_id)
+
+    for parent_id, monitor_ids in degraded_mesh_by_parent.items():
+        if len(monitor_ids) < 2:
+            continue
+        parent = lookup_obs.get(parent_id or "")
+        if parent and parent.status is not True:
+            continue
+        parent_assessment = baseline_assessments.get(parent_id or "")
+        if parent_assessment and parent_assessment.sustained:
+            continue
+        items = [lookup_obs[item_id] for item_id in monitor_ids]
         causes.append(
             RootCause(
-                f"{label} latency degradation",
-                "mesh",
-                "medium",
-                supporting=(f"{label} has sustained high response time while the gateway path remains materially healthier.",),
-                affected=(label,),
-                causal_path=("gateway", label, "degraded forwarding/backhaul candidate"),
+                "Mesh / wireless layer latency degradation",
+                "topology",
+                "high" if parent and parent.status is True else "medium",
+                supporting=(
+                    "Multiple sibling Mesh / Wireless Nodes show sustained response-time degradation while their configured parent remains reachable."
+                    if parent
+                    else "Multiple sibling Mesh / Wireless Nodes show sustained response-time degradation.",
+                ),
+                affected=_names(items),
+                causal_path=(
+                    *((parent.binding.name,) if parent else ()),
+                    "Mesh / wireless layer latency",
+                ),
             )
         )
+        consumed.update(monitor_ids)
+
+    for monitor_id, assessment in root_degraded.items():
+        if monitor_id in consumed:
+            continue
+        item = lookup_obs[monitor_id]
+        parent = lookup_obs.get(item.binding.parent_id or "")
+        ratio = f"{assessment.ratio:.1f}×" if assessment.ratio is not None else "materially above"
+        baseline = (
+            f"{assessment.median_ms:.1f} ms"
+            if assessment.median_ms is not None
+            else "its recent baseline"
+        )
+        supporting = [
+            f"{item.binding.name} response time is {ratio} its recent median ({baseline}) for a sustained period."
+        ]
+        contradictions: list[str] = []
+        confidence = "medium"
+        if parent and parent.status is True:
+            contradictions.append(
+                f"A broad upstream outage is contradicted by parent {parent.binding.name} remaining reachable."
+            )
+            parent_assessment = baseline_assessments.get(parent.binding.monitor_id)
+            if parent_assessment and parent_assessment.state == "normal":
+                supporting.append(
+                    f"Parent {parent.binding.name} remains within its own recent response-time baseline."
+                )
+
+        siblings = [
+            sibling
+            for sibling in child_lookup.get(item.binding.parent_id or "", [])
+            if sibling.monitor_id != monitor_id
+            and sibling.role in {ROLE_NETWORK_NODE, ROLE_MESH_NODE}
+        ]
+        normal_siblings = [
+            sibling.name
+            for sibling in siblings
+            if (sibling_obs := lookup_obs.get(sibling.monitor_id)) is not None
+            and sibling_obs.status is True
+            and (sibling_assessment := baseline_assessments.get(sibling.monitor_id)) is not None
+            and sibling_assessment.state == "normal"
+        ]
+        if normal_siblings:
+            supporting.append(
+                "Sibling control(s) remain within baseline: " + ", ".join(normal_siblings) + "."
+            )
+            if parent and parent.status is True:
+                confidence = "high"
+
+        causes.append(
+            RootCause(
+                f"{item.binding.name} latency degradation",
+                "topology",
+                confidence,
+                supporting=tuple(supporting),
+                contradicting=tuple(contradictions),
+                affected=(item.binding.name,),
+                causal_path=(
+                    *path_names(item.binding.monitor_id, bindings),
+                    "latency degradation",
+                ),
+            )
+        )
+
+    return causes, False
+
+
+def classify(
+    obs: ObservationSet,
+    *,
+    degraded_nodes: dict[str, BaselineAssessment] | None = None,
+) -> DiagnosisResult:
+    """Classify observations with deterministic causal reasoning."""
+    degraded_nodes = degraded_nodes or {}
+    if obs.monitoring_gaps or obs.required_gaps or not obs.provider_fresh:
+        gaps = [*obs.required_gaps, *obs.monitoring_gaps]
+        if not obs.provider_fresh:
+            age = (
+                f" ({obs.provider_age_seconds:.0f}s since the stalest configured monitor heartbeat)"
+                if obs.provider_age_seconds is not None
+                else ""
+            )
+            gaps.append(f"Uptime Kuma evidence is stale or unavailable{age}")
+        return DiagnosisResult(
+            diagnosis=MONITORING_INCOMPLETE,
+            summary=(
+                "Required configured evidence is missing, stale, or invalid, so Network Diagnostics "
+                "will not claim the network is healthy or assign a root cause."
+            ),
+            confidence="insufficient",
+            monitoring_gaps=tuple(dict.fromkeys(gaps)),
+            coverage_gaps=tuple(obs.coverage_gaps),
+            unassigned_monitors=tuple(obs.unassigned_monitors),
+            failed_controls=_failed_names(obs),
+            unaffected=_healthy_names(obs),
+        )
+
+    gateway = obs.by_role(ROLE_GATEWAY)
+    ipv4 = obs.by_role(ROLE_IPV4_CONTROL)
+    ipv6 = obs.by_role(ROLE_IPV6_CONTROL)
+    dns_neutral = obs.by_role(ROLE_DNS_NEUTRAL)
+    dns_local = obs.by_role(ROLE_DNS_LOCAL)
+    https = obs.by_role(ROLE_HTTPS_CONTROL)
+
+    causes, gateway_suppresses_external = _topology_causes(obs, degraded_nodes)
+    if gateway_suppresses_external:
+        return _result_from_causes(obs, causes)
 
     v4_down = _all_down(ipv4)
     v6_down = _all_down(ipv6)
@@ -483,9 +585,15 @@ def classify(obs: ObservationSet, *, degraded_mesh: set[str] | None = None) -> D
                 "General IPv4 failure",
                 "internet",
                 "high" if len(_usable(ipv4)) >= 2 else "medium",
-                supporting=("All IPv4 controls are down while at least one IPv6 control remains healthy.",),
-                contradicting=("A full WAN outage is contradicted by healthy IPv6 reachability.",),
-                downstream=_names([item for item in (*dns_neutral, *dns_local, *https) if item.status is False]),
+                supporting=(
+                    "All configured IPv4 controls are down while at least one IPv6 control remains healthy.",
+                ),
+                contradicting=(
+                    "A full WAN outage is contradicted by healthy IPv6 reachability.",
+                ),
+                downstream=_names(
+                    [item for item in (*dns_neutral, *dns_local, *https) if item.status is False]
+                ),
                 affected=_names(ipv4),
                 causal_path=("upstream network", "IPv4"),
             )
@@ -496,9 +604,15 @@ def classify(obs: ObservationSet, *, degraded_mesh: set[str] | None = None) -> D
                 "General IPv6 failure",
                 "internet",
                 "high" if len(_usable(ipv6)) >= 2 else "medium",
-                supporting=("All IPv6 controls are down while at least one IPv4 control remains healthy.",),
-                contradicting=("A full WAN outage is contradicted by healthy IPv4 reachability.",),
-                downstream=_names([item for item in (*dns_neutral, *dns_local, *https) if item.status is False]),
+                supporting=(
+                    "All configured IPv6 controls are down while at least one IPv4 control remains healthy.",
+                ),
+                contradicting=(
+                    "A full WAN outage is contradicted by healthy IPv4 reachability.",
+                ),
+                downstream=_names(
+                    [item for item in (*dns_neutral, *dns_local, *https) if item.status is False]
+                ),
                 affected=_names(ipv6),
                 causal_path=("upstream network", "IPv6"),
             )
@@ -510,10 +624,14 @@ def classify(obs: ObservationSet, *, degraded_mesh: set[str] | None = None) -> D
                 "Upstream Internet / WAN failure",
                 "internet",
                 "high" if gateway and _any_up(gateway) else "medium",
-                supporting=("External IP controls are unreachable while the local gateway remains reachable.",),
-                downstream=_names([item for item in (*dns_neutral, *dns_local, *https) if item.status is False]),
+                supporting=(
+                    "Configured external IP controls are unreachable while the local Gateway remains reachable.",
+                ),
+                downstream=_names(
+                    [item for item in (*dns_neutral, *dns_local, *https) if item.status is False]
+                ),
                 affected=_names(failed_external),
-                causal_path=("gateway", "WAN/upstream Internet", "external services"),
+                causal_path=("Gateway", "WAN/upstream Internet", "external services"),
             )
         )
     else:
@@ -524,16 +642,16 @@ def classify(obs: ObservationSet, *, degraded_mesh: set[str] | None = None) -> D
                     "Partial Internet target/path failure",
                     "internet",
                     "medium",
-                    supporting=("Some external reachability controls fail while others remain healthy.",),
+                    supporting=(
+                        "Some external reachability controls fail while others remain healthy.",
+                    ),
                     affected=_names(partial_ip),
                     causal_path=("Internet", "specific target/path"),
                 )
             )
 
-    # If we already have a full upstream Internet root cause, DNS/HTTPS failures are downstream symptoms.
     has_upstream = any(cause.name == "Upstream Internet / WAN failure" for cause in causes)
     internet_any_up = v4_up or v6_up
-
     if not has_upstream and internet_any_up:
         neutral_down = _all_down(dns_neutral)
         neutral_up = _any_up(dns_neutral)
@@ -544,10 +662,16 @@ def classify(obs: ObservationSet, *, degraded_mesh: set[str] | None = None) -> D
                     "General DNS failure",
                     "dns",
                     "high" if len(_usable(dns_neutral)) >= 2 else "medium",
-                    supporting=("Neutral DNS is failing while general IP reachability remains available.",),
-                    contradicting=("A general Internet outage is contradicted by healthy IP controls.",),
+                    supporting=(
+                        "Independent DNS controls are failing while general IP reachability remains available.",
+                    ),
+                    contradicting=(
+                        "A general Internet outage is contradicted by healthy IP controls.",
+                    ),
                     downstream=_names([item for item in https if item.status is False]),
-                    affected=_names([item for item in (*dns_neutral, *dns_local) if item.status is False]),
+                    affected=_names(
+                        [item for item in (*dns_neutral, *dns_local) if item.status is False]
+                    ),
                     causal_path=("Internet IP", "DNS"),
                 )
             )
@@ -557,17 +681,20 @@ def classify(obs: ObservationSet, *, degraded_mesh: set[str] | None = None) -> D
                     "Local DNS forwarder/upstream failure",
                     "dns",
                     "high",
-                    supporting=("Local/router DNS is down while neutral DNS remains healthy.",),
-                    contradicting=("General DNS failure is contradicted by healthy neutral DNS.",),
+                    supporting=(
+                        "Local DNS is down while Independent DNS remains healthy.",
+                    ),
+                    contradicting=(
+                        "General DNS failure is contradicted by healthy Independent DNS.",
+                    ),
                     affected=_names(dns_local),
                     causal_path=("Internet", "local DNS forwarder"),
                 )
             )
 
-        # Service-specific groups (for example NextDNS).
-        for group in obs.service_groups:
-            service_dns = obs.by_service(ROLE_SERVICE_DNS, group)
-            service_path = obs.by_service(ROLE_SERVICE_PATH, group)
+        for service in obs.service_groups:
+            service_dns = obs.by_service(ROLE_SERVICE_DNS, service)
+            service_path = obs.by_service(ROLE_SERVICE_PATH, service)
             dns_all_down = _all_down(service_dns)
             path_all_down = _all_down(service_path)
             dns_any_up = _any_up(service_dns)
@@ -575,25 +702,31 @@ def classify(obs: ObservationSet, *, degraded_mesh: set[str] | None = None) -> D
             if dns_all_down and service_dns and path_all_down and service_path and neutral_up:
                 causes.append(
                     RootCause(
-                        f"{group} routing/path failure",
-                        f"service:{group}",
+                        f"{service} routing/path failure",
+                        f"service:{service}",
                         "high",
-                        supporting=(f"{group} DNS and path controls fail while neutral DNS and general Internet remain healthy.",),
-                        contradicting=("General DNS failure is contradicted by healthy neutral DNS.",),
+                        supporting=(
+                            f"{service} DNS and path controls fail while Independent DNS and general Internet remain healthy.",
+                        ),
+                        contradicting=(
+                            "General DNS failure is contradicted by healthy Independent DNS.",
+                        ),
                         downstream=_names([item for item in dns_local if item.status is False]),
                         affected=_names([*service_dns, *service_path]),
-                        causal_path=("Internet", f"{group} network path", f"{group} DNS service"),
+                        causal_path=("Internet", f"{service} network path", f"{service} DNS service"),
                     )
                 )
             elif dns_all_down and service_dns and (path_any_up or not service_path) and neutral_up:
                 causes.append(
                     RootCause(
-                        f"{group} DNS-service failure",
-                        f"service:{group}",
+                        f"{service} DNS-service failure",
+                        f"service:{service}",
                         "high" if len(_usable(service_dns)) >= 2 and service_path else "medium",
-                        supporting=(f"{group} DNS checks fail while its network path and neutral DNS remain healthy.",),
+                        supporting=(
+                            f"{service} DNS checks fail while its path and Independent DNS remain healthy.",
+                        ),
                         affected=_names(service_dns),
-                        causal_path=("Internet", f"{group} path", f"{group} DNS service"),
+                        causal_path=("Internet", f"{service} path", f"{service} DNS service"),
                     )
                 )
             else:
@@ -601,12 +734,12 @@ def classify(obs: ObservationSet, *, degraded_mesh: set[str] | None = None) -> D
                 if partial and (dns_any_up or path_any_up):
                     causes.append(
                         RootCause(
-                            f"Partial {group} endpoint/path failure",
-                            f"service:{group}",
+                            f"Partial {service} endpoint/path failure",
+                            f"service:{service}",
                             "medium",
-                            supporting=(f"Only part of the {group} evidence set is failing.",),
+                            supporting=(f"Only part of the {service} evidence set is failing.",),
                             affected=_names(partial),
-                            causal_path=("Internet", group, "specific endpoint/path"),
+                            causal_path=("Internet", service, "specific endpoint/path"),
                         )
                     )
 
@@ -616,55 +749,30 @@ def classify(obs: ObservationSet, *, degraded_mesh: set[str] | None = None) -> D
                     "HTTPS-specific failure",
                     "https",
                     "medium",
-                    supporting=("HTTPS controls fail while IP reachability and neutral DNS remain healthy.",),
+                    supporting=(
+                        "HTTPS controls fail while IP reachability and Independent DNS remain healthy.",
+                    ),
                     affected=_names(https),
                     causal_path=("Internet", "DNS", "HTTPS/application layer"),
                 )
             )
 
-    # Avoid double counting a DNS-local symptom when a service-specific provider explains it.
     if any(cause.domain.startswith("service:") for cause in causes):
-        causes = [
-            cause
-            for cause in causes
-            if not (
-                cause.name == "Local DNS forwarder/upstream failure"
-                and any(item.status is False for item in dns_local)
-            )
-        ]
+        causes = [cause for cause in causes if cause.name != "Local DNS forwarder/upstream failure"]
 
-    # Collapse multiple mesh-node causes into one independent domain for the MULTIPLE decision.
-    domains = []
-    unique_causes: list[RootCause] = []
-    for cause in causes:
-        if cause.domain == "mesh":
-            if "mesh" in domains:
-                # Keep individual mesh causes so the UI names each affected node, but they are one domain.
-                unique_causes.append(cause)
-                continue
-            domains.append("mesh")
-            unique_causes.append(cause)
-        else:
-            domains.append(cause.domain)
-            unique_causes.append(cause)
-
-    # If all findings are within the mesh domain, summarize them as one root-domain result.
-    if unique_causes and all(cause.domain == "mesh" for cause in unique_causes):
-        if len(unique_causes) == 1:
-            return _result_from_causes(obs, unique_causes)
+    topology_causes = [cause for cause in causes if cause.domain == "topology"]
+    non_topology = [cause for cause in causes if cause.domain != "topology"]
+    if len(topology_causes) > 1 and not non_topology:
         combined = RootCause(
-            "Mesh layer impairment",
-            "mesh",
-            "high" if all(c.confidence == "high" for c in unique_causes) else "medium",
-            supporting=tuple(item for c in unique_causes for item in c.supporting),
-            affected=tuple(item for c in unique_causes for item in c.affected),
-            causal_path=("gateway", "mesh layer", "multiple nodes"),
+            "Local topology impairment",
+            "topology",
+            "high" if all(c.confidence == "high" for c in topology_causes) else "medium",
+            supporting=tuple(item for c in topology_causes for item in c.supporting),
+            contradicting=tuple(item for c in topology_causes for item in c.contradicting),
+            downstream=tuple(item for c in topology_causes for item in c.downstream),
+            affected=tuple(item for c in topology_causes for item in c.affected),
+            causal_path=("configured local topology", "multiple affected nodes/paths"),
         )
-        return _result_from_causes(obs, [combined])
+        causes = [combined]
 
-    # Multiple distinct domains are truly concurrent faults.
-    distinct_domains = {cause.domain for cause in unique_causes}
-    if len(distinct_domains) > 1:
-        return _result_from_causes(obs, unique_causes)
-
-    return _result_from_causes(obs, unique_causes)
+    return _result_from_causes(obs, causes)

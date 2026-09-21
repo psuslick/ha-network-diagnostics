@@ -31,7 +31,7 @@ async def async_setup_entry(
 
 
 class DiagnosisSensor(NetworkDiagnosticsEntity, SensorEntity):
-    _attr_name = "Status"
+    _attr_translation_key = "status"
     _attr_icon = "mdi:stethoscope"
 
     def __init__(self, runtime: NetworkDiagnosticsRuntime) -> None:
@@ -39,7 +39,11 @@ class DiagnosisSensor(NetworkDiagnosticsEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        return self.runtime.current.diagnosis.diagnosis if self.runtime.current else "Initializing"
+        return (
+            self.runtime.current.diagnosis.diagnosis
+            if self.runtime.current
+            else "Initializing"
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -72,18 +76,14 @@ class DiagnosisSensor(NetworkDiagnosticsEntity, SensorEntity):
                 }
                 for cause in result.root_causes
             ],
-            # Keep entity attributes semantic/stable. The sidebar panel and
-            # downloadable diagnostics expose detailed provider ages; putting a
-            # continuously changing heartbeat age here would force unnecessary
-            # Recorder rows on every Kuma refresh.
-            "provider_fresh": current.provider_freshness.get("fresh"),
-            "profile": current.discovery.get("profile"),
+            "evidence_fresh": current.freshness.get("fresh"),
+            "configured": current.discovery.get("configured"),
             "last_manual_analysis": self.runtime.last_manual_analysis,
         }
 
 
 class ConfidenceSensor(NetworkDiagnosticsEntity, SensorEntity):
-    _attr_name = "Confidence"
+    _attr_translation_key = "confidence"
     _attr_icon = "mdi:gauge"
 
     def __init__(self, runtime: NetworkDiagnosticsRuntime) -> None:
@@ -91,11 +91,15 @@ class ConfidenceSensor(NetworkDiagnosticsEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        return self.runtime.current.diagnosis.confidence if self.runtime.current else "unknown"
+        return (
+            self.runtime.current.diagnosis.confidence
+            if self.runtime.current
+            else "unknown"
+        )
 
 
 class CoverageSensor(NetworkDiagnosticsEntity, SensorEntity):
-    _attr_name = "Coverage"
+    _attr_translation_key = "coverage"
     _attr_icon = "mdi:radar"
 
     def __init__(self, runtime: NetworkDiagnosticsRuntime) -> None:
@@ -105,26 +109,32 @@ class CoverageSensor(NetworkDiagnosticsEntity, SensorEntity):
     def native_value(self) -> str:
         if not self.runtime.current:
             return "Initializing"
-        return "Complete" if not self.runtime.current.diagnosis.coverage_gaps else "Partial"
+        return (
+            "Complete"
+            if not self.runtime.current.diagnosis.coverage_gaps
+            else "Partial"
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         if not self.runtime.current:
             return {}
         return {
-            "profile": self.runtime.current.discovery.get("profile"),
             "coverage_gaps": list(self.runtime.current.diagnosis.coverage_gaps),
+            "capabilities": dict(
+                self.runtime.current.discovery.get("coverage_capabilities", {})
+            ),
             "unassigned_monitors": list(
                 self.runtime.current.diagnosis.unassigned_monitors
             ),
-            "recognized_monitor_count": len(
+            "configured_monitor_count": len(
                 self.runtime.current.discovery.get("bindings", [])
             ),
         }
 
 
 class LastIncidentSensor(NetworkDiagnosticsEntity, SensorEntity):
-    _attr_name = "Last incident"
+    _attr_translation_key = "last_incident"
     _attr_icon = "mdi:timeline-alert"
 
     def __init__(self, runtime: NetworkDiagnosticsRuntime) -> None:
@@ -162,7 +172,7 @@ class LastIncidentSensor(NetworkDiagnosticsEntity, SensorEntity):
 
 
 class Incidents24hSensor(NetworkDiagnosticsEntity, SensorEntity):
-    _attr_name = "Incidents 24h"
+    _attr_translation_key = "incidents_24h"
     _attr_icon = "mdi:counter"
 
     def __init__(self, runtime: NetworkDiagnosticsRuntime) -> None:

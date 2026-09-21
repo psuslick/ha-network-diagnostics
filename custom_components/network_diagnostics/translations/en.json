@@ -2,29 +2,122 @@
   "title": "Network Diagnostics",
   "config": {
     "step": {
-      "user": {
-        "title": "Set up Network Diagnostics",
-        "description": "Network Diagnostics automatically discovers supported Uptime Kuma monitors already exposed by Home Assistant. It performs no network probes itself. After setup, use the Network Diagnostics sidebar panel to see recognized monitors, missing coverage, diagnoses, and incidents."
+      "roles": {
+        "title": "Assign diagnostic roles",
+        "description": "Assign only the Uptime Kuma monitors that should participate in diagnosis. A monitor can have one role. Uptime Kuma Tags can prefill these selections when their Tags entities are enabled, but the confirmed mapping is stored locally in Network Diagnostics.",
+        "data": {
+          "gateway": "Gateway",
+          "network_node": "Network node",
+          "mesh_node": "Mesh / wireless node",
+          "fixed_client": "Fixed downstream client",
+          "lan_control": "LAN control",
+          "ipv4_control": "IPv4 Internet control",
+          "ipv6_control": "IPv6 Internet control",
+          "dns_neutral": "Independent DNS control",
+          "dns_local": "Local DNS control",
+          "service_dns": "Service DNS control",
+          "service_path": "Service path control",
+          "https_control": "HTTPS control"
+        },
+        "data_description": {
+          "gateway": "The local gateway/router whose reachability anchors local-vs-upstream diagnosis.",
+          "network_node": "A switch, router, bridge, or other local infrastructure node that can have a parent and downstream children.",
+          "mesh_node": "A wireless access point, mesh satellite, or similar node. Its response-time baseline can be compared with its parent and siblings.",
+          "fixed_client": "A non-roaming client physically downstream of one local node. Two independent fixed clients behind a node provide stronger forwarding/backhaul-path evidence than one.",
+          "lan_control": "An independent, stable local-LAN endpoint used to distinguish a gateway failure from the Home Assistant-to-LAN path.",
+          "ipv4_control": "An external IPv4 reachability control. Two independent controls provide stronger evidence for a general IPv4 failure.",
+          "ipv6_control": "An external IPv6 reachability control. Two independent controls provide stronger evidence for a general IPv6 failure.",
+          "dns_neutral": "A DNS check independent of the local resolver or service being diagnosed.",
+          "dns_local": "A DNS check through the local/router resolver path.",
+          "service_dns": "A DNS check for a named external or local service group.",
+          "service_path": "A non-DNS path/reachability check for a named service group, used to separate service DNS failure from service-path failure.",
+          "https_control": "An HTTPS/application-layer control used with IP and independent DNS evidence to localize HTTPS-specific failures."
+        }
+      },
+      "parent": {
+        "title": "Set parent for {monitor}",
+        "description": "{monitor} is configured as **{role}** ({position} of {total}). Select the infrastructure node directly upstream of it. Choose no parent only when the relationship is unknown or intentionally outside the modeled topology.",
+        "data": {
+          "parent": "Parent"
+        },
+        "data_description": {
+          "parent": "The configured upstream dependency. Network Diagnostics uses this relationship to suppress downstream symptoms and calculate impact."
+        }
+      },
+      "service": {
+        "title": "Name service for {monitor}",
+        "description": "{monitor} is configured as **{role}** ({position} of {total}). Give related service DNS and service path controls exactly the same service name so they can be correlated.",
+        "data": {
+          "service": "Service name"
+        },
+        "data_description": {
+          "service": "A local display/group name supplied by this Home Assistant installation. It is not built into the integration source."
+        }
+      },
+      "confirm": {
+        "title": "Review diagnostic model",
+        "description": "Configured monitors: **{configured_count}**\n\n**Configuration blockers**\n{blockers}\n\n**Warnings**\n{warnings}\n\n**Coverage not yet available**\n{coverage}\n\nCoverage gaps do not make healthy configured evidence invalid; they describe fault classes that cannot yet be distinguished. Blockers must be corrected before saving."
       }
     },
+    "error": {
+      "duplicate_monitor_assignment": "A Kuma monitor was assigned to more than one diagnostic role.",
+      "no_monitors_selected": "Assign at least one Kuma monitor.",
+      "service_required": "Enter a service name.",
+      "configuration_blocked": "Correct the configuration blockers before saving."
+    },
     "abort": {
-      "single_instance_allowed": "Only one Network Diagnostics instance is supported."
+      "single_instance_allowed": "Only one Network Diagnostics instance is supported.",
+      "uptime_kuma_required": "Set up the official Uptime Kuma integration before Network Diagnostics.",
+      "no_kuma_monitors": "No usable Uptime Kuma monitors are currently exposed by Home Assistant.",
+      "reconfigure_successful": "Network Diagnostics was reconfigured successfully."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Diagnosis and incident behavior",
-        "description": "Monitor discovery is automatic. These advanced settings control data freshness, debounce/recovery, sustained mesh-latency detection, and retained incident history.",
+        "description": "These settings control evidence freshness, incident confirmation, RAM-only adaptive response-time baselines, and compact incident retention. Raw Kuma measurements are not duplicated into a Network Diagnostics recorder.",
         "data": {
-          "stale_seconds": "Uptime Kuma feed stale after (seconds)",
-          "failure_confirm_seconds": "Confirm abnormal diagnosis after (seconds)",
-          "recovery_confirm_seconds": "Confirm recovery after (seconds)",
-          "mesh_latency_ms": "Mesh-node latency threshold (ms)",
-          "mesh_degradation_seconds": "Sustained mesh latency required (seconds)",
-          "incident_retention": "Completed incidents to retain"
+          "stale_seconds": "Evidence stale after",
+          "failure_confirm_seconds": "Failure confirmation",
+          "recovery_confirm_seconds": "Recovery confirmation",
+          "baseline_window_minutes": "Baseline window",
+          "baseline_min_samples": "Minimum baseline samples",
+          "baseline_ratio": "Baseline ratio threshold",
+          "baseline_min_delta_ms": "Minimum baseline increase",
+          "degradation_seconds": "Sustained degradation duration",
+          "incident_retention": "Completed incidents retained"
+        },
+        "data_description": {
+          "stale_seconds": "Maximum age of the freshest public Kuma heartbeat entity for each configured monitor.",
+          "failure_confirm_seconds": "How long a new abnormal diagnosis must persist before opening an incident.",
+          "recovery_confirm_seconds": "How long healthy evidence must persist before closing an incident.",
+          "baseline_window_minutes": "Rolling in-memory window used for each eligible local node. Samples are not persisted.",
+          "baseline_min_samples": "Fresh samples required before adaptive degradation analysis becomes available.",
+          "baseline_ratio": "Current response time must exceed this multiple of the rolling median, in addition to the minimum increase and robust-spread test.",
+          "baseline_min_delta_ms": "Minimum response-time increase above the rolling median before a value can be considered abnormal.",
+          "degradation_seconds": "How long an adaptive response-time anomaly must remain abnormal before it becomes a degradation diagnosis.",
+          "incident_retention": "Maximum number of compact completed incident records kept by Network Diagnostics."
         }
       }
+    }
+  },
+  "issues": {
+    "configuration_required": {
+      "title": "Network Diagnostics needs configuration",
+      "description": "Assign Uptime Kuma monitors to diagnostic roles and define any local parent relationships using the Network Diagnostics reconfigure flow."
+    },
+    "configured_monitor_missing": {
+      "title": "Configured diagnostic monitors are missing",
+      "description": "{count} configured Uptime Kuma monitor(s) can no longer be resolved. Reconfigure Network Diagnostics to replace or remove the missing monitor assignments."
+    },
+    "invalid_configuration": {
+      "title": "Network Diagnostics configuration is invalid",
+      "description": "The configured evidence model contains a blocking problem: {details}. Reconfigure Network Diagnostics before relying on root-cause conclusions."
+    },
+    "stale_provider": {
+      "title": "Uptime Kuma evidence is stale",
+      "description": "One or more configured monitors are no longer receiving fresh state through Home Assistant. Check the official Uptime Kuma integration and the monitors it exposes."
     }
   },
   "entity": {

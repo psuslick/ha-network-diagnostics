@@ -64,7 +64,8 @@ class RuntimeSnapshot:
     diagnosis: DiagnosisResult
     observations: list[dict[str, Any]]
     discovery: dict[str, Any]
-    provider_freshness: dict[str, Any]
+    topology: list[dict[str, Any]]
+    freshness: dict[str, Any]
     manual: bool = False
 
     def as_dict(self) -> dict[str, Any]:
@@ -100,5 +101,30 @@ class RuntimeSnapshot:
             },
             "observations": list(self.observations),
             "discovery": dict(self.discovery),
-            "provider_freshness": dict(self.provider_freshness),
+            "topology": list(self.topology),
+            "freshness": dict(self.freshness),
+        }
+
+    def incident_snapshot(self) -> dict[str, Any]:
+        """Return compact derived evidence only; never a second raw recorder."""
+        return {
+            "at": self.at,
+            "diagnosis": self.diagnosis.diagnosis,
+            "confidence": self.diagnosis.confidence,
+            "evidence": list(self.diagnosis.evidence),
+            "contradictions": list(self.diagnosis.contradictions),
+            "downstream": list(self.diagnosis.downstream),
+            "observations": [
+                {
+                    "name": item.get("name"),
+                    "role": item.get("role"),
+                    "role_name": item.get("role_name"),
+                    "status": item.get("status"),
+                    "response_ms": item.get("response_ms"),
+                    "baseline_state": item.get("baseline_state"),
+                    "baseline_median_ms": item.get("baseline_median_ms"),
+                    "baseline_ratio": item.get("baseline_ratio"),
+                }
+                for item in self.observations
+            ],
         }

@@ -23,7 +23,7 @@ async def async_setup_entry(
 
 
 class MonitoringProblemSensor(NetworkDiagnosticsEntity, BinarySensorEntity):
-    _attr_name = "Monitoring problem"
+    _attr_translation_key = "monitoring_problem"
     _attr_icon = "mdi:monitor-alert"
 
     def __init__(self, runtime: NetworkDiagnosticsRuntime) -> None:
@@ -32,8 +32,7 @@ class MonitoringProblemSensor(NetworkDiagnosticsEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool:
         return bool(
-            self.runtime.current
-            and self.runtime.current.diagnosis.monitoring_problem
+            self.runtime.current and self.runtime.current.diagnosis.monitoring_problem
         )
 
     @property
@@ -45,12 +44,12 @@ class MonitoringProblemSensor(NetworkDiagnosticsEntity, BinarySensorEntity):
                 self.runtime.current.diagnosis.monitoring_gaps
             ),
             "coverage_gaps": list(self.runtime.current.diagnosis.coverage_gaps),
-            "provider_fresh": self.runtime.current.provider_freshness.get("fresh"),
+            "evidence_fresh": self.runtime.current.freshness.get("fresh"),
         }
 
 
 class ActiveIncidentSensor(NetworkDiagnosticsEntity, BinarySensorEntity):
-    _attr_name = "Active incident"
+    _attr_translation_key = "active_incident"
     _attr_icon = "mdi:alert-circle-outline"
 
     def __init__(self, runtime: NetworkDiagnosticsRuntime) -> None:

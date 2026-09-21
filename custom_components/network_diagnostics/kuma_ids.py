@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-# Longest first. Home Assistant's Uptime Kuma sensor keys include multi-word
-# suffixes such as response_time; splitting on the final underscore is wrong.
 KNOWN_SUFFIXES: tuple[str, ...] = (
+    "avg_response_time_365d",
+    "avg_response_time_30d",
+    "avg_response_time_1d",
     "cert_days_remaining",
     "response_time",
+    "uptime_365d",
+    "uptime_30d",
+    "uptime_1d",
     "hostname",
     "status",
     "type",

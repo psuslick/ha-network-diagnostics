@@ -1,4 +1,4 @@
-"""Button entity for Network Diagnostics."""
+"""Button platform for Network Diagnostics."""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ async def async_setup_entry(
 
 
 class AnalyzeNowButton(NetworkDiagnosticsEntity, ButtonEntity):
-    _attr_name = "Analyze now"
-    _attr_icon = "mdi:stethoscope"
+    _attr_translation_key = "analyze_now"
+    _attr_icon = "mdi:play-circle-outline"
 
     def __init__(self, runtime: NetworkDiagnosticsRuntime) -> None:
         super().__init__(runtime, "analyze_now")

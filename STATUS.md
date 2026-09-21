@@ -1,12 +1,11 @@
-# Build status
+# Status
 
-- Package version: `0.2.0`
-- Project status: **PROPOSED / PACKAGE-VALIDATED**
-- Local unit/static/repository validation: **PASS**
-- Simulated repository-finalization validation: **PASS**
-- Live Home Assistant install: **NOT YET APPLIED**
-- Live classifier/incident validation: **NOT YET VERIFIED**
-- Network Diagnostics sidebar panel: **NOT YET VERIFIED ON LIVE HA**
-- Existing `sensor.network_fault_diagnosis` Template helper: remains current until successful cutover
+Version: **0.3.0**
 
-See `VALIDATION.txt`, `DECISIONS_AND_HANDOFF.md`, and `ORBI_NEXTDNS_SETUP.md`.
+Build status: **PACKAGE-VALIDATED**.
+
+This status means the source tree, privacy/package validators, publication-finalization simulation, archive extraction validation, and release checksum verification passed for the delivered build. It does **not** mean the integration has been live-verified inside Home Assistant.
+
+Live Home Assistant state: **not modified by this package build**.
+
+The integration becomes **VERIFIED** only after it is installed on a real Home Assistant instance, configured through the new generic topology flow, and passes the live acceptance test in `DECISIONS_AND_HANDOFF.md`. Existing diagnostic logic should remain current until then.

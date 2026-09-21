@@ -1,121 +1,189 @@
-"""Pure validation of discovered diagnostic monitor semantics."""
+"""Pure validation and coverage analysis for configured diagnostic monitors."""
 
 from __future__ import annotations
 
-from collections import Counter
-import ipaddress
+from collections import Counter, defaultdict
 
 from .const import (
     ROLE_DNS_LOCAL,
     ROLE_DNS_NEUTRAL,
-    ROLE_HTTPS,
-    ROLE_IPV4,
-    ROLE_IPV6,
-    ROLE_MESH,
-    ROLE_MESH_CHILD,
+    ROLE_FIXED_CLIENT,
+    ROLE_GATEWAY,
+    ROLE_HTTPS_CONTROL,
+    ROLE_IPV4_CONTROL,
+    ROLE_IPV6_CONTROL,
+    ROLE_LAN_CONTROL,
+    ROLE_MESH_NODE,
+    ROLE_NETWORK_NODE,
     ROLE_SERVICE_DNS,
     ROLE_SERVICE_PATH,
+    SERVICE_ROLES,
 )
 from .observations import MonitorBinding
+from .topology import validate_topology
 
 _DNS_ROLES = {ROLE_DNS_NEUTRAL, ROLE_DNS_LOCAL, ROLE_SERVICE_DNS}
+_LOCAL_NODE_ROLES = {ROLE_GATEWAY, ROLE_NETWORK_NODE, ROLE_MESH_NODE, ROLE_FIXED_CLIENT}
+_INDEPENDENT_ROLES = {
+    ROLE_LAN_CONTROL,
+    ROLE_IPV4_CONTROL,
+    ROLE_IPV6_CONTROL,
+    ROLE_DNS_NEUTRAL,
+    ROLE_SERVICE_DNS,
+    ROLE_SERVICE_PATH,
+    ROLE_HTTPS_CONTROL,
+}
+
+
+def _duplicate_independence_gaps(bindings: list[MonitorBinding]) -> list[str]:
+    """Find controls presented as independent that resolve to one known target."""
+    grouped: dict[tuple[str, str | None], list[MonitorBinding]] = defaultdict(list)
+    for item in bindings:
+        if item.role not in _INDEPENDENT_ROLES or not item.target_fingerprint:
+            continue
+        service = item.service.casefold() if item.service else None
+        grouped[(item.role, service)].append(item)
+
+    gaps: list[str] = []
+    for items in grouped.values():
+        by_target: dict[str, list[MonitorBinding]] = defaultdict(list)
+        for item in items:
+            by_target[item.target_fingerprint or ""].append(item)
+        for same in by_target.values():
+            if len(same) < 2:
+                continue
+            names = " and ".join(sorted(item.name for item in same))
+            gaps.append(
+                f"{names} use the same endpoint for the same diagnostic role; independent evidence must use distinct endpoints"
+            )
+    return gaps
+
+
+def _independent_count(items: list[MonitorBinding]) -> int:
+    fingerprints = {item.target_fingerprint for item in items if item.target_fingerprint}
+    unknown = sum(1 for item in items if not item.target_fingerprint)
+    return len(fingerprints) + unknown
 
 
 def validate_bindings(bindings: list[MonitorBinding]) -> tuple[list[str], list[str]]:
-    """Return ``(coverage_warnings, required_blockers)`` for monitor mappings."""
+    """Return ``(coverage_warnings, blockers)`` for role semantics."""
     warnings: list[str] = []
     blockers: list[str] = []
 
-    # Distinct Kuma monitor IDs are distinct observations, but two non-DNS
-    # monitors assigned to the same diagnostic role/group and the exact same
-    # endpoint are not independent evidence. DNS monitors are excluded because
-    # Kuma's exposed target is the query hostname; the configured resolver is
-    # not part of the HA/Prometheus target metadata, so two independent DNS
-    # resolvers can legitimately show the same target.
-    seen_sources: dict[tuple[str, str, str, str], str] = {}
-    for item in bindings:
-        if item.role in _DNS_ROLES or not item.target_fingerprint:
-            continue
-        key = (
-            item.role,
-            (item.group or "").casefold(),
-            (item.monitor_type or "").casefold(),
-            item.target_fingerprint,
-        )
-        previous = seen_sources.get(key)
-        if previous:
-            blockers.append(
-                f"{previous} and {item.name} use the same endpoint for the same diagnostic role; they are not independent controls"
-            )
-        else:
-            seen_sources[key] = item.name
-
-    mesh_labels = [(item.label or item.name).strip() for item in bindings if item.role == ROLE_MESH]
-    mesh_counts = Counter(label.casefold() for label in mesh_labels)
-    duplicated_mesh_labels = {label for label, count in mesh_counts.items() if count > 1}
-    if duplicated_mesh_labels:
-        for duplicate in sorted(duplicated_mesh_labels):
-            blockers.append(
-                f"Multiple mesh monitors use the same diagnostic label {duplicate!r}; mesh-child parent relationships would be ambiguous"
-            )
-
-    mesh_lookup = {label.casefold() for label in mesh_labels}
-    for item in bindings:
-        monitor_type = (item.monitor_type or "").casefold()
-        if item.role in _DNS_ROLES and monitor_type and monitor_type != "dns":
-            blockers.append(
-                f"{item.name} is assigned a DNS role but Kuma monitor type is {item.monitor_type!r}, not 'dns'"
-            )
-
-        if item.role == ROLE_HTTPS and item.target and "://" in item.target:
-            if not item.target.casefold().startswith("https://"):
-                blockers.append(
-                    f"{item.name} is assigned the HTTPS role but its monitored URL is not HTTPS"
-                )
-
-        if item.role in {ROLE_IPV4, ROLE_IPV6} and item.target:
-            try:
-                addr = ipaddress.ip_address(item.target.strip("[]"))
-            except ValueError:
-                addr = None
-            if addr is not None:
-                expected = 4 if item.role == ROLE_IPV4 else 6
-                if addr.version != expected:
-                    blockers.append(
-                        f"{item.name} is assigned {item.role.upper()} but targets an IPv{addr.version} address"
-                    )
-
-        if item.role == ROLE_MESH_CHILD:
-            parent = (item.group or "").strip()
-            if not parent:
-                blockers.append(f"{item.name} is a mesh-child monitor without a parent mesh label")
-            elif parent.casefold() not in mesh_lookup:
-                blockers.append(
-                    f"{item.name} references mesh parent {parent!r}, but no [ND:mesh] monitor uses that label"
-                )
-
-    service_dns = {
-        (item.group or "").casefold()
-        for item in bindings
-        if item.role == ROLE_SERVICE_DNS and item.group
-    }
-    service_path = {
-        (item.group or "").casefold()
-        for item in bindings
-        if item.role == ROLE_SERVICE_PATH and item.group
-    }
-    display_group = {
-        (item.group or "").casefold(): item.group
-        for item in bindings
-        if item.group
-    }
-    for group in sorted(service_dns - service_path):
+    names = Counter(item.name.casefold() for item in bindings)
+    if any(count > 1 for count in names.values()):
         warnings.append(
-            f"Service {display_group.get(group, group)} has DNS checks but no service-path control; DNS-service versus routing failures will be harder to separate"
-        )
-    for group in sorted(service_path - service_dns):
-        warnings.append(
-            f"Service {display_group.get(group, group)} has path controls but no service-DNS check; service-specific DNS diagnosis is unavailable"
+            "Two configured Kuma monitors share the same display name; diagnosis still uses stable monitor identity, but incident text may be ambiguous"
         )
 
+    for item in bindings:
+        if item.role in _DNS_ROLES and item.monitor_type not in {None, "dns"}:
+            blockers.append(
+                f"{item.name} is assigned a DNS role but its Kuma monitor type is {item.monitor_type}"
+            )
+        if item.role == ROLE_HTTPS_CONTROL and item.monitor_type not in {
+            None,
+            "http",
+            "keyword",
+            "real_browser",
+        }:
+            warnings.append(
+                f"{item.name} is assigned HTTPS Control but its Kuma monitor type is {item.monitor_type}"
+            )
+        if item.role == ROLE_IPV4_CONTROL and item.target_ip_version == 6:
+            blockers.append(
+                f"{item.name} is assigned IPv4 Internet Control but monitors an IPv6 literal"
+            )
+        if item.role == ROLE_IPV6_CONTROL and item.target_ip_version == 4:
+            blockers.append(
+                f"{item.name} is assigned IPv6 Internet Control but monitors an IPv4 literal"
+            )
+        if item.role in SERVICE_ROLES and not item.service:
+            blockers.append(
+                f"{item.name} is assigned a service-specific role but has no service group name"
+            )
+        if item.role in _INDEPENDENT_ROLES and not item.target_fingerprint:
+            warnings.append(
+                f"{item.name} does not expose a usable target through Home Assistant, so endpoint independence cannot be verified"
+            )
+
+    blockers.extend(_duplicate_independence_gaps(bindings))
+    topo_warnings, topo_blockers = validate_topology(bindings)
+    warnings.extend(topo_warnings)
+    blockers.extend(topo_blockers)
     return list(dict.fromkeys(warnings)), list(dict.fromkeys(blockers))
+
+
+def coverage_capabilities(bindings: list[MonitorBinding]) -> dict[str, bool]:
+    """Describe what the configured evidence can actually distinguish."""
+    by_role: dict[str, list[MonitorBinding]] = defaultdict(list)
+    for item in bindings:
+        by_role[item.role].append(item)
+
+    local_nodes = [item for item in bindings if item.role in _LOCAL_NODE_ROLES]
+    child_counts = Counter(
+        item.parent_id
+        for item in bindings
+        if item.role == ROLE_FIXED_CLIENT and item.parent_id
+    )
+    services = {
+        item.service for item in bindings if item.service and item.role in SERVICE_ROLES
+    }
+    service_depth = any(
+        any(x.service == service for x in by_role[ROLE_SERVICE_DNS])
+        and any(x.service == service for x in by_role[ROLE_SERVICE_PATH])
+        for service in services
+    )
+
+    return {
+        "gateway_failure": bool(by_role[ROLE_GATEWAY]),
+        "local_path_discrimination": bool(
+            by_role[ROLE_GATEWAY] and by_role[ROLE_LAN_CONTROL]
+        ),
+        "topology_node_localization": any(item.parent_id for item in local_nodes),
+        "downstream_path_discrimination": any(
+            count >= 2 for count in child_counts.values()
+        ),
+        "adaptive_latency_degradation": any(
+            item.role in {ROLE_GATEWAY, ROLE_NETWORK_NODE, ROLE_MESH_NODE}
+            for item in bindings
+        ),
+        "ipv4_specific_failure": _independent_count(by_role[ROLE_IPV4_CONTROL]) >= 2,
+        "ipv6_specific_failure": _independent_count(by_role[ROLE_IPV6_CONTROL]) >= 2,
+        "wan_failure": bool(
+            by_role[ROLE_GATEWAY]
+            and (by_role[ROLE_IPV4_CONTROL] or by_role[ROLE_IPV6_CONTROL])
+        ),
+        "general_dns_failure": bool(
+            by_role[ROLE_DNS_NEUTRAL]
+            and (by_role[ROLE_IPV4_CONTROL] or by_role[ROLE_IPV6_CONTROL])
+        ),
+        "local_dns_failure": bool(
+            by_role[ROLE_DNS_LOCAL] and by_role[ROLE_DNS_NEUTRAL]
+        ),
+        "service_dns_path_separation": service_depth,
+        "https_specific_failure": bool(
+            by_role[ROLE_HTTPS_CONTROL]
+            and by_role[ROLE_DNS_NEUTRAL]
+            and (by_role[ROLE_IPV4_CONTROL] or by_role[ROLE_IPV6_CONTROL])
+        ),
+    }
+
+
+def coverage_gaps(capabilities: dict[str, bool]) -> list[str]:
+    """Return advisory gaps; they do not invalidate healthy configured evidence."""
+    labels = {
+        "gateway_failure": "Gateway failure is not directly covered",
+        "local_path_discrimination": "No independent LAN Control is configured to separate gateway failure from the Home Assistant-to-LAN path",
+        "topology_node_localization": "No parent relationships are configured for local nodes",
+        "downstream_path_discrimination": "No local node has two fixed downstream controls, so forwarding/backhaul-path failures remain harder to distinguish from client failures",
+        "adaptive_latency_degradation": "No Gateway, Network Node, or Mesh / Wireless Node is configured for adaptive latency degradation analysis",
+        "ipv4_specific_failure": "Fewer than two independent IPv4 controls are configured",
+        "ipv6_specific_failure": "Fewer than two independent IPv6 controls are configured",
+        "wan_failure": "Gateway plus external IP evidence is not sufficient to distinguish a WAN failure",
+        "general_dns_failure": "Independent DNS plus external IP evidence is not configured",
+        "local_dns_failure": "Local DNS plus independent DNS evidence is not configured",
+        "service_dns_path_separation": "No service has both DNS and path controls, so service DNS failures cannot be separated from service-path failures",
+        "https_specific_failure": "HTTPS, independent DNS, and external IP evidence are not all configured",
+    }
+    return [labels[key] for key, available in capabilities.items() if not available]

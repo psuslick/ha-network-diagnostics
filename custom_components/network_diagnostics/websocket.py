@@ -1,8 +1,8 @@
-"""WebSocket API for the Network Diagnostics panel."""
+"""Admin-only WebSocket commands for the Network Diagnostics panel."""
 
 from __future__ import annotations
 
-import voluptuous as vol
+from typing import Any
 
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
@@ -11,7 +11,6 @@ from .const import DOMAIN
 
 
 def _runtime(hass: HomeAssistant):
-    """Return the loaded runtime without assuming every entry has runtime_data."""
     entries = hass.config_entries.async_entries(DOMAIN)
     if not entries:
         return None
@@ -19,14 +18,14 @@ def _runtime(hass: HomeAssistant):
 
 
 @websocket_api.require_admin
-@websocket_api.websocket_command({vol.Required("type"): "network_diagnostics/get_snapshot"})
+@websocket_api.websocket_command({"type": "network_diagnostics/get_snapshot"})
 @callback
 def websocket_get_snapshot(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
-    msg: dict,
+    msg: dict[str, Any],
 ) -> None:
-    """Return the current diagnostic snapshot and recent incidents."""
+    """Return the current panel snapshot."""
     runtime = _runtime(hass)
     if runtime is None:
         connection.send_error(msg["id"], "not_loaded", "Network Diagnostics is not loaded")
@@ -35,14 +34,14 @@ def websocket_get_snapshot(
 
 
 @websocket_api.require_admin
-@websocket_api.websocket_command({vol.Required("type"): "network_diagnostics/analyze"})
+@websocket_api.websocket_command({"type": "network_diagnostics/analyze"})
 @websocket_api.async_response
 async def websocket_analyze(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
-    msg: dict,
+    msg: dict[str, Any],
 ) -> None:
-    """Run a local analysis pass; this performs no network I/O."""
+    """Run one local analysis pass; no network probes are created."""
     runtime = _runtime(hass)
     if runtime is None:
         connection.send_error(msg["id"], "not_loaded", "Network Diagnostics is not loaded")
@@ -51,11 +50,8 @@ async def websocket_analyze(
     connection.send_result(msg["id"], runtime.panel_payload())
 
 
+@callback
 def async_register_websocket_commands(hass: HomeAssistant) -> None:
-    """Register commands once per Home Assistant process."""
-    data = hass.data.setdefault(DOMAIN, {})
-    if data.get("websocket_registered"):
-        return
+    """Register commands once during integration-domain setup."""
     websocket_api.async_register_command(hass, websocket_get_snapshot)
     websocket_api.async_register_command(hass, websocket_analyze)
-    data["websocket_registered"] = True

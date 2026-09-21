@@ -1,0 +1,41 @@
+Network Diagnostics v0.3.0 — package validation
+
+STATUS: PACKAGE-VALIDATED (not live VERIFIED)
+
+Acceptance contract:
+  SUCCESS_CRITERIA.md, criteria 1-40.
+
+Validated source behavior:
+  - 50 automated tests passed.
+  - Python source/tests/tools compiled successfully under Python 3.13.
+  - Sidebar JavaScript passed Node syntax validation.
+  - Privacy validator passed.
+  - Repository validator passed with privacy-preserving repository-owner placeholders.
+  - Source manifest regenerated and validated.
+  - No direct raw-network probing client is present in the integration.
+  - Uptime Kuma remains the raw-probe/history authority.
+  - Adaptive response-time samples are RAM-only; compact derived incidents are the only diagnostic history persisted by this integration.
+  - Downloadable diagnostics pseudonymize local monitor/service names and stable monitor identifiers and omit monitored targets.
+  - No Home Assistant Recorder configuration is modified.
+  - No live Home Assistant configuration was modified by this build.
+
+Publication-finalization simulation:
+  - Copied the release source to a clean tree.
+  - Ran tools/finalize_repo.py with a synthetic GitHub organization/repository identity.
+  - Confirmed finalized manifest contains no repository-owner placeholders.
+  - Ran the same 50-test suite successfully after finalization.
+  - Re-ran Python compilation, JavaScript syntax, privacy, source-manifest, and repository checks successfully.
+
+Automatic retry history:
+  1. The first publication-finalization simulation exposed a validation-test defect: one package test required repository placeholders to remain present, so a correctly finalized manifest failed the test. The test was corrected to validate both the privacy-preserving distributable state and the finalized publication state. The full source and finalization validation chains were rerun successfully.
+  2. An initial simulation harness check searched the entire validator source for the placeholder token and therefore matched the validator's own constant. The harness was corrected to inspect the finalized manifest itself. The finalization simulation then passed.
+
+Refined acceptance criterion added during final build:
+  - Criterion 40 requires the same automated suite to pass both before and after repository metadata finalization. Finalizing publisher metadata must not change product behavior or invalidate tests.
+
+Release artifact checks:
+  - The delivered ZIP is extracted into a clean directory and the same tests/package/privacy/syntax checks are run against the extracted bytes.
+  - SHA-256 is calculated only after the final ZIP is built and verified with sha256sum -c. The checksum itself is distributed beside the ZIP, so it is not embedded in this file.
+
+Important boundary:
+  PACKAGE-VALIDATED establishes repository/package integrity only. Live Home Assistant API/runtime compatibility and real diagnostic behavior remain unverified until installation and the explicit live acceptance test.

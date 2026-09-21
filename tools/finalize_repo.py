@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
-"""Fill repository-specific manifest metadata after the GitHub repo exists."""
+"""Replace privacy-safe repository placeholders with publisher-selected metadata."""
 from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 from urllib.parse import urlparse
-
-sys.dont_write_bytecode = True
-from generate_source_manifest import write_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "custom_components" / "network_diagnostics" / "manifest.json"
@@ -17,31 +13,31 @@ MANIFEST = ROOT / "custom_components" / "network_diagnostics" / "manifest.json"
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--repo-url", required=True, help="https://github.com/OWNER/REPO")
-    parser.add_argument("--codeowner", help="GitHub user/team, e.g. @owner or @org/team")
+    parser.add_argument("--repo-url", required=True)
+    parser.add_argument("--codeowner")
     args = parser.parse_args()
 
-    url = args.repo_url.rstrip("/")
-    parsed = urlparse(url)
-    parts = [p for p in parsed.path.split("/") if p]
-    if parsed.scheme != "https" or parsed.netloc.lower() != "github.com" or len(parts) != 2:
-        raise SystemExit("--repo-url must be exactly https://github.com/OWNER/REPO")
-    owner, _repo = parts
+    parsed = urlparse(args.repo_url)
+    if parsed.scheme != "https" or parsed.netloc != "github.com":
+        raise SystemExit("--repo-url must be an https://github.com/<owner>/<repo> URL")
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) != 2:
+        raise SystemExit("--repo-url must identify exactly one GitHub repository")
+    owner, repo = parts
     codeowner = args.codeowner or f"@{owner}"
     if not codeowner.startswith("@"):
         raise SystemExit("--codeowner must start with @")
 
-    data = json.loads(MANIFEST.read_text())
-    data["documentation"] = url
-    data["issue_tracker"] = f"{url}/issues"
+    data = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    base = f"https://github.com/{owner}/{repo}"
+    data["documentation"] = base
+    data["issue_tracker"] = f"{base}/issues"
     data["codeowners"] = [codeowner]
-    MANIFEST.write_text(json.dumps(data, indent=2) + "\n")
-    write_manifest()
-    print(f"Updated {MANIFEST.relative_to(ROOT)}")
-    print(f"documentation: {url}")
-    print(f"issue_tracker: {url}/issues")
-    print(f"codeowners: {codeowner}")
-    print("Regenerated SOURCE_MANIFEST.sha256")
+    MANIFEST.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    from generate_source_manifest import main as generate_manifest
+    generate_manifest()
+    print(f"Finalized repository metadata for {base}")
     return 0
 
 

@@ -1,219 +1,154 @@
-# Network Diagnostics for Home Assistant
+# Network Diagnostics
 
-Network Diagnostics is a HACS custom integration that turns **Uptime Kuma measurements into topology-aware network diagnosis** inside Home Assistant.
+Network Diagnostics is a HACS custom integration that turns existing Uptime Kuma monitor states into topology-aware network diagnosis inside Home Assistant.
 
-> **Uptime Kuma measures. Network Diagnostics explains.**
+Uptime Kuma answers **which checks are healthy or failing**. Network Diagnostics adds the next layer: **which upstream explanation best accounts for the pattern, which failures are downstream effects, what evidence contradicts broader alternatives, and whether the same incident pattern has happened before**.
 
-The integration does **not** ping hosts, query DNS, open TCP connections, or fetch websites. Uptime Kuma remains the probe and raw-history engine. Network Diagnostics consumes the monitors already exposed by Home Assistant's official **Uptime Kuma** integration and correlates them into root-cause hypotheses, downstream effects, monitoring gaps, and retained incidents.
-
-## Status
-
-**v0.2.0 — PROPOSED / package-validated.**
-
-The package is locally tested and repository-validated. It is not **APPLIED** or **VERIFIED** until installed and exercised on a real Home Assistant system.
-
-## What you get
-
-After adding Network Diagnostics, Home Assistant gets:
-
-- an admin-only **Network Diagnostics** sidebar panel;
-- a current diagnosis with qualitative evidence strength;
-- supporting and contradicting evidence;
-- downstream-effect suppression so one upstream failure does not look like many independent failures;
-- explicit monitoring/coverage gaps;
-- automatic incident start/update/recovery tracking;
-- retained incident snapshots for later investigation;
-- an **Analyze now** action;
-- Home Assistant entities for status, confidence, coverage, active/last incident, incident count, and incident events;
-- downloadable integration diagnostics.
-
-No Lovelace YAML, template helper, automation, HA Ping integration, or manual entity-ID mapping is required.
+It performs no network probes itself.
 
 ## Architecture
 
 ```text
 Uptime Kuma
-  ├─ ping / DNS / TCP / HTTP(S) probes
-  ├─ retries and timeouts
-  └─ raw latency / uptime history
+  raw probes + raw history
         │
         ▼
-Official Home Assistant Uptime Kuma integration
+Home Assistant official Uptime Kuma integration
+  current monitor entities
         │
         ▼
 Network Diagnostics
-  ├─ automatic monitor-role discovery
-  ├─ evidence validation / freshness checking
-  ├─ topology-aware causal classification
-  ├─ downstream symptom suppression
-  ├─ incident correlation / persistence
-  └─ admin-only Network Diagnostics panel
+  roles + topology + causal reasoning
+  RAM-only adaptive latency baselines
+  compact derived incident history
+        │
+        ├── standard HA entities
+        └── admin-only Network Diagnostics sidebar panel
 ```
 
-Network Diagnostics performs no additional network polling. It listens to the official Uptime Kuma coordinator already present in Home Assistant and to the HA entities that coordinator owns.
+Network Diagnostics uses Home Assistant's public entity/device/config-entry/state interfaces. It does not read the Uptime Kuma integration's private runtime objects and does not directly contact monitored targets.
 
-## Installation
+## Why it is useful with different network topologies
 
-### Prerequisites
+The engine contains no vendor-specific topology. During setup, the user assigns generic roles to Kuma monitors and describes parent relationships. A simple installation can model a Gateway plus Internet and DNS controls. A larger installation can describe chains such as Gateway → Network Node → Mesh Node → Fixed Downstream Clients.
 
-1. Home Assistant **2026.9.0 or newer**.
-2. Uptime Kuma.
-3. Home Assistant's official **Uptime Kuma** integration configured and loaded.
-4. HACS.
+That graph lets the classifier apply dependency-aware reasoning. If an upstream node fails, failed descendants can be presented as effects rather than unrelated root causes. If a child fails while its parent and sibling controls remain healthy, localization becomes stronger.
 
-For the Home Assistant OS Uptime Kuma App, the App publishes discovery information to Home Assistant. For an external Kuma instance, configure the official HA Uptime Kuma integration normally.
+Diagnostic capability scales with the evidence configured. The Coverage view explicitly lists what can and cannot currently be distinguished.
 
-### Install through HACS
+## Setup
 
-1. Add this repository to HACS as a **Custom repository** of type **Integration**.
-2. Install **Network Diagnostics**.
-3. Restart Home Assistant if HACS requests it.
-4. Go to **Settings → Devices & services → Add integration → Network Diagnostics**.
-5. Open **Network Diagnostics** from the sidebar.
+Prerequisites:
 
-The config flow contains no monitor mapping form. Monitor assignment comes from the Kuma monitor names described below.
+- Home Assistant 2026.9.0 or newer
+- HACS
+- the official Home Assistant **Uptime Kuma** integration configured and exposing at least one monitor
 
-## Generic Kuma naming contract
+Install Network Diagnostics as a HACS custom integration, restart Home Assistant when HACS requests it, then add **Network Diagnostics** under **Settings → Devices & services**.
 
-A monitor is enrolled by prefixing its Kuma name with a Network Diagnostics role marker. The text after the marker is the human-facing label.
+The setup flow:
 
-| Kuma monitor name | Meaning |
-|---|---|
-| `[ND:gateway] Main Router` | local gateway/router reachability |
-| `[ND:lan-control] Wired LAN Control` | independent always-on wired LAN reference |
-| `[ND:mesh] Upstairs AP` | mesh satellite / access point |
-| `[ND:mesh-child:Upstairs AP] Wired TV` | fixed endpoint physically downstream of that mesh node |
-| `[ND:ipv4] Cloudflare IPv4` | independent IPv4 Internet control |
-| `[ND:ipv6] Cloudflare IPv6` | independent IPv6 Internet control |
-| `[ND:dns-neutral] Cloudflare DNS` | DNS control independent of the home's configured DNS path |
-| `[ND:dns-local] Router DNS` | DNS through the local router/resolver |
-| `[ND:https] Internet HTTPS` | HTTPS/application-layer control |
-| `[ND:service:NextDNS:dns] Resolver 1` | service-specific DNS check |
-| `[ND:service:NextDNS:path] IPv6 path 1` | service-specific network-path check |
+1. discovers Kuma monitors already exposed by Home Assistant;
+2. asks which monitors should participate and what diagnostic role each has;
+3. asks for parent relationships for local topology nodes;
+4. groups service-specific DNS/path controls when used;
+5. validates the evidence model and shows coverage gaps before saving.
 
-Unknown Kuma monitors are ignored and listed as **Unassigned monitors** in the panel. Network Diagnostics never guesses an arbitrary monitor's purpose from an IP address alone.
+Reconfigure the integration later to change topology; removal/re-add is not required.
 
-### Minimum evidence for a Healthy verdict
+See [KUMA_TAG_CONVENTION.md](KUMA_TAG_CONVENTION.md) for the optional Kuma Tags convention that can prefill setup when Home Assistant exposes an enabled Tags entity.
 
-Network Diagnostics will not claim **Healthy** unless it has at least:
+## Canonical naming
 
-- one `gateway` monitor;
-- at least one `ipv4` or `ipv6` Internet control;
-- one `dns-neutral` control; and
-- one `https` control.
+The **Uptime Kuma monitor name is the canonical display name**. Network Diagnostics does not create alternate room/device aliases.
 
-Additional independent controls increase what the classifier can distinguish. For example, independent IPv4 and IPv6 controls can separate family-specific failures from a broader WAN outage.
+Internally, topology uses stable Kuma monitor identity so a display-name change does not become the relationship key. Re-discovery uses the updated Kuma name for presentation.
 
-## Built-in Orbi + NextDNS profile
+## Diagnostic roles
 
-The integration recognizes the existing monitor names used by the original Orbi + NextDNS deployment without requiring `[ND:...]` renames. See [ORBI_NEXTDNS_SETUP.md](ORBI_NEXTDNS_SETUP.md) for the complete monitor list and the two required satellite monitors.
+Roles represent semantics, not brands:
 
-## Root-cause behavior
+- Gateway
+- Network Node
+- Mesh / Wireless Node
+- Fixed Downstream Client
+- LAN Control
+- IPv4 Internet Control
+- IPv6 Internet Control
+- Independent DNS Control
+- Local DNS Control
+- Service DNS Control
+- Service Path Control
+- HTTPS Control
 
-The classifier is deterministic. It does not generate numerical pseudo-probabilities.
+Two independent Fixed Downstream Clients behind one reachable local node provide stronger evidence of a shared forwarding/downstream-path failure than one client alone.
 
-Examples of supported findings include:
+## Adaptive latency degradation
 
-- gateway management/reachability failure;
-- gateway/router failure;
-- local HA/LAN path failure;
-- individual mesh-node outage;
-- mesh-layer impairment;
-- sustained mesh latency degradation;
-- fixed downstream mesh path/client failure;
-- stronger downstream/backhaul-path evidence when multiple fixed children fail together;
-- IPv4-only or IPv6-only failure;
-- upstream Internet/WAN failure;
-- partial Internet target/path failure;
-- general DNS failure;
-- local DNS forwarder/upstream failure;
-- service-specific DNS, routing/path, or partial endpoint failure;
-- HTTPS-specific failure;
-- multiple concurrent fault domains;
-- Monitoring incomplete;
-- Mixed / insufficient evidence;
-- Healthy.
+Gateway, Network Node, and Mesh / Wireless Node response times use a bounded in-memory rolling baseline. The detector uses a recent median, median absolute deviation, a minimum absolute increase, a ratio threshold, and a sustained-duration requirement.
 
-The classifier favors the smallest supported upstream explanation and labels downstream failures as consequences when the evidence permits it.
+The baseline is deliberately **RAM-only**. After a Home Assistant restart, the panel reports a learning state until enough fresh samples have accumulated. Network Diagnostics does not persist every Kuma latency sample and does not query Recorder continuously to rebuild the window.
 
-## Mesh/backhaul diagnosis
+Sibling and parent baselines are used as independent context when available. A single degraded mesh node with a healthy parent and normal sibling is stronger evidence of a localized path/node problem than degradation shared by all siblings.
 
-A pingable mesh node is not proof that its forwarding/backhaul path is healthy.
+## Incidents
 
-For stronger diagnosis, add one or preferably two **fixed, always-on, non-roaming endpoints physically behind a mesh node**, for example a device Ethernet-connected to that satellite/AP:
+Network Diagnostics persists compact derived incidents, not raw telemetry. An incident can retain:
 
-```text
-[ND:mesh] Upstairs AP
-[ND:mesh-child:Upstairs AP] Wired control A
-[ND:mesh-child:Upstairs AP] Wired control B
-```
+- start/recovery time and duration;
+- initial/current diagnosis and transitions;
+- evidence strength;
+- supporting/contradicting evidence;
+- causal path/downstream effects;
+- a compact evidence snapshot;
+- a fingerprint for recurring-pattern counts.
 
-Interpretation:
+Raw network measurement history remains Uptime Kuma's responsibility.
 
-- mesh node down, gateway up → localized mesh-node outage;
-- mesh node up + one fixed child down → path **or client** failure, medium evidence;
-- mesh node up + two independent fixed children down → downstream/backhaul path failure, high evidence;
-- sustained mesh-node latency materially above the gateway path → latency degradation candidate.
+## Home Assistant entities
 
-Network Diagnostics does not pretend that these observations equal a vendor's proprietary radio-quality indicator. If the vendor reports a degraded backhaul while all available Kuma evidence is healthy, the panel explicitly retains that observability limitation.
+The integration exposes native HA entities for Status, Confidence, Coverage, Last incident, Incidents 24h, Monitoring problem, Active incident, Analyze now, and incident events. These make the result usable from ordinary HA dashboards and automations without requiring the custom panel.
 
-## Monitoring freshness
+The sidebar panel adds topology/impact, detailed evidence, adaptive-baseline state, coverage, and incident history.
 
-Stable `up` state entities can remain unchanged for a long time even while Kuma is functioning normally. Network Diagnostics therefore does **not** use a stable status entity's `last_changed` timestamp as the provider heartbeat.
+## Repairs and configuration health
 
-On Home Assistant 2026.9, it listens to the official Uptime Kuma integration's existing `DataUpdateCoordinator`. A successful coordinator update refreshes the provider heartbeat; a failed or stale coordinator causes **Monitoring incomplete**. This is an intentional fail-closed design.
+Actionable configuration defects are surfaced through Home Assistant Repairs, including setup-required state, configured Kuma monitors that disappeared, invalid evidence/topology configuration, and stale Kuma evidence.
 
-This is a compatibility boundary: Network Diagnostics depends on the current official Uptime Kuma integration runtime exposing a standard coordinator through its config entry. If Home Assistant changes that implementation in a future release, the integration should fail to **Monitoring incomplete** rather than manufacture a network diagnosis.
+A Coverage gap is different from a broken configuration. A network can be **Healthy within its configured scope** while Coverage remains **Partial**. The integration will not claim it can distinguish a fault class for which the necessary evidence was never configured.
 
-## Incident history
+## Privacy
 
-Default behavior:
+The source tree contains no deployment topology or monitored targets. Runtime topology stays inside the installing Home Assistant instance. Downloaded integration diagnostics pseudonymize local monitor/service names and stable monitor identifiers and do not export monitored targets.
 
-- abnormal diagnosis confirmation: **15 s**;
-- recovery confirmation: **60 s**;
-- Kuma provider stale threshold: **180 s**;
-- mesh latency threshold: **25 ms**;
-- sustained mesh-latency duration: **90 s**;
-- completed incident retention: **200**.
+See [PRIVACY_AND_PUBLISHING.md](PRIVACY_AND_PUBLISHING.md).
 
-These can be changed under **Settings → Devices & services → Network Diagnostics → Configure**.
+## Data ownership / Recorder
 
-Incident history stores semantic transitions and bounded snapshots, not every Kuma heartbeat. Uptime Kuma remains the raw time-series/history source.
+Uptime Kuma is the authoritative raw network historian. Network Diagnostics does not create a second raw recorder. Its adaptive sample window is bounded RAM; only compact derived incidents are persisted.
 
-The 200-incident default is appropriate for SSD/NVMe-backed HA storage. It remains bounded to avoid creating an unbounded internal database.
+The integration does **not** change Home Assistant Recorder exclusions. Whether to retain HA-side history for high-frequency Kuma entities is an independent user decision that should be made only after checking dashboards/automations that might rely on it.
 
-## Privacy and security
+## Known limitations
 
-- The sidebar panel and its WebSocket commands require an HA **admin** user.
-- Network Diagnostics makes no direct network requests.
-- It does not need Kuma credentials.
-- URL targets are sanitized before appearing in the panel or diagnostic export; credentials, paths, query strings, and fragments are removed.
-- Incident transition history is bounded.
+- Network Diagnostics can only reason from configured evidence. A vendor-specific radio/backhaul-quality indicator is not inferred from successful ping/latency alone.
+- Optional Kuma Tags depend on what the official HA Uptime Kuma integration exposes and whether the Tags entity is enabled. Explicit setup remains the authority.
+- Dynamic diagnosis narratives and the custom panel are currently English-only.
+- The release ZIP can be package-validated locally; real Home Assistant behavior is not **VERIFIED** until a live installation completes acceptance testing.
 
-## Limitations
+## Development and validation
 
-- Network Diagnostics can only reason from evidence that Kuma/HA exposes.
-- It cannot directly read proprietary Wi-Fi backhaul-quality states unless another integration exposes them.
-- A single downstream endpoint failure cannot prove a backhaul failure; the endpoint itself may have failed.
-- DNS monitor metadata exposed by HA does not reliably identify the configured resolver endpoint, so two DNS checks querying the same hostname are not automatically considered duplicates.
-- The v0.2 provider-freshness implementation intentionally relies on the current HA Uptime Kuma coordinator shape. It fails closed if that evidence disappears.
-
-## Repository validation
-
-Before the GitHub repository exists, the manifest intentionally contains `REPLACE_WITH_...` placeholders. After creating the repo:
+Run:
 
 ```bash
-python tools/finalize_repo.py \
-  --repo-url https://github.com/YOUR_ACCOUNT/ha-network-diagnostics
-
-python tools/check_repo.py
+python tools/check_privacy.py
+python tools/generate_source_manifest.py
+python tools/check_repo.py --allow-placeholders
 pytest
+python -m compileall -q custom_components tests tools
+node --check custom_components/network_diagnostics/frontend/network-diagnostics-panel.js
 ```
 
-The repository includes GitHub Actions for unit tests, HACS validation, and Home Assistant hassfest validation.
+The repository also includes HACS and hassfest GitHub Actions.
 
-See [REPOSITORY_SETUP.md](REPOSITORY_SETUP.md) and [DECISIONS_AND_HANDOFF.md](DECISIONS_AND_HANDOFF.md).
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+The complete acceptance contract is [SUCCESS_CRITERIA.md](SUCCESS_CRITERIA.md).

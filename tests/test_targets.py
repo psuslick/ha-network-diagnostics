@@ -1,23 +1,30 @@
-from __future__ import annotations
-
-from custom_components.network_diagnostics.targets import sanitize_target, target_fingerprint
-
-
-def test_http_target_strips_credentials_path_query_and_fragment():
-    assert sanitize_target("https://user:secret@example.com:8443/private/token?api=secret#x") == "https://example.com:8443"
-
-
-def test_ipv6_url_target_is_bracketed():
-    assert sanitize_target("https://[2001:db8::1]:8443/private") == "https://[2001:db8::1]:8443"
+from custom_components.network_diagnostics.targets import (
+    normalized_target_identity,
+    select_raw_target,
+    target_fingerprint,
+    target_ip_version,
+)
 
 
-def test_non_url_target_is_preserved():
-    assert sanitize_target("192.168.1.20") == "192.168.1.20"
+def test_hostname_and_port_identity_is_preserved():
+    raw = select_raw_target(hostname="198.51.100.20", port="443")
+    assert raw == "198.51.100.20:443"
+    assert normalized_target_identity(raw) == "198.51.100.20:443"
+    assert target_ip_version(raw) == 4
 
 
-def test_target_fingerprint_is_stable_and_hides_raw_value():
-    first = target_fingerprint("https://example.com/token?secret=abc")
-    second = target_fingerprint("https://example.com/token?secret=abc")
-    assert first == second
-    assert "secret" not in first
-    assert len(first) == 16
+def test_url_identity_discards_credentials_path_query_and_fragment():
+    raw = "https://user:secret@example.com:8443/private?q=token#fragment"
+    assert normalized_target_identity(raw) == "https://example.com:8443"
+    assert "secret" not in target_fingerprint(raw)
+
+
+def test_documentation_ipv6_literal_is_detected():
+    assert target_ip_version("2001:db8::10") == 6
+    assert target_ip_version("[2001:db8::10]:443") == 6
+
+
+def test_invalid_or_empty_targets_do_not_create_identity():
+    assert select_raw_target() is None
+    assert normalized_target_identity("") is None
+    assert target_fingerprint(None) is None

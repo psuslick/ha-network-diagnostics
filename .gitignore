@@ -1,11 +1,4 @@
 __pycache__/
-*.py[cod]
 .pytest_cache/
-.coverage
-htmlcov/
-.venv/
-venv/
+*.py[cod]
 .DS_Store
-*.zip
-CHECKSUMS.txt
-VALIDATION.txt
