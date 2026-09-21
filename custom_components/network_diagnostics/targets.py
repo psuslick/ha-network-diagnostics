@@ -78,3 +78,18 @@ def target_ip_version(value: str | None) -> int | None:
         return ipaddress.ip_address(clean).version
     except ValueError:
         return None
+
+
+def monitor_target_semantics(
+    monitor_type: str | None, value: str | None
+) -> tuple[str | None, int | None]:
+    """Return safe endpoint identity semantics for a Kuma monitor target.
+
+    For DNS monitors, Home Assistant's exposed monitored-hostname is the query
+    name, not the resolver endpoint. It must never be used to prove resolver
+    equality or independence. Until the official integration exposes resolver
+    identity through a public entity/state surface, represent it as unknown.
+    """
+    if monitor_type == "dns":
+        return None, None
+    return target_fingerprint(value), target_ip_version(value)

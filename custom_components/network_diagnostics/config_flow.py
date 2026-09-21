@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.components.file_upload import process_uploaded_file
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -16,6 +18,12 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 
+from .config_import import (
+    ConfigImportError,
+    ImportInventoryItem,
+    MAX_CONFIG_FILE_BYTES,
+    import_monitor_config,
+)
 from .const import (
     ALL_ASSIGNABLE_ROLES,
     CONF_BASELINE_MIN_DELTA_MS,
@@ -54,6 +62,26 @@ from .discovery import KumaMonitor, configured_bindings, discover_kuma_inventory
 from .validation import coverage_capabilities, coverage_gaps, validate_bindings
 
 ROLE_FIELDS = tuple(role for role in ALL_ASSIGNABLE_ROLES if role != ROLE_IGNORE)
+CONF_CONFIG_FILE = "config_file"
+
+
+def _read_uploaded_config(hass, uploaded_file_id: str) -> Any:
+    """Read a temporary Home Assistant upload as bounded UTF-8 JSON."""
+    with process_uploaded_file(hass, uploaded_file_id) as file_path:
+        if file_path.stat().st_size > MAX_CONFIG_FILE_BYTES:
+            raise ConfigImportError(
+                f"Configuration file is larger than {MAX_CONFIG_FILE_BYTES // 1024} KiB"
+            )
+        try:
+            text = file_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as err:
+            raise ConfigImportError("Configuration file must be UTF-8 JSON") from err
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as err:
+        raise ConfigImportError(
+            f"Invalid JSON near line {err.lineno}, column {err.colno}"
+        ) from err
 
 
 def _monitor_options(monitors: list[KumaMonitor]) -> list[dict[str, str]]:
@@ -98,6 +126,7 @@ class NetworkDiagnosticsConfigFlow(ConfigFlow, domain=DOMAIN):
         self._service_items: list[str] = []
         self._service_index = 0
         self._reconfigure = False
+        self._import_error = "None"
 
     def _load_inventory(self) -> bool:
         self._inventory = discover_kuma_inventory(self.hass)
@@ -136,7 +165,9 @@ class NetworkDiagnosticsConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="uptime_kuma_required")
         if not self._load_inventory():
             return self.async_abort(reason="no_kuma_monitors")
-        return await self.async_step_roles()
+        return self.async_show_menu(
+            step_id="user", menu_options=["manual", "upload_config"]
+        )
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
@@ -146,7 +177,52 @@ class NetworkDiagnosticsConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="uptime_kuma_required")
         if not self._load_inventory():
             return self.async_abort(reason="no_kuma_monitors")
+        return self.async_show_menu(
+            step_id="reconfigure", menu_options=["manual", "upload_config"]
+        )
+
+    async def async_step_manual(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Configure roles/topology through the guided forms."""
         return await self.async_step_roles()
+
+    async def async_step_upload_config(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Import a portable JSON role/topology configuration."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                payload = await self.hass.async_add_executor_job(
+                    _read_uploaded_config, self.hass, user_input[CONF_CONFIG_FILE]
+                )
+                self._working = import_monitor_config(
+                    payload,
+                    [
+                        ImportInventoryItem(item.monitor_key, item.name)
+                        for item in self._inventory
+                    ],
+                )
+            except (ConfigImportError, OSError) as err:
+                self._import_error = str(err)
+                errors["base"] = "invalid_config_file"
+            else:
+                self._import_error = "None"
+                return await self.async_step_confirm()
+
+        return self.async_show_form(
+            step_id="upload_config",
+            description_placeholders={"import_error": self._import_error},
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_CONFIG_FILE): selector.FileSelector(
+                        selector.FileSelectorConfig(accept=".json,application/json")
+                    )
+                }
+            ),
+            errors=errors,
+        )
 
     async def async_step_roles(
         self, user_input: dict[str, Any] | None = None

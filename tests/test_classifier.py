@@ -243,9 +243,9 @@ def test_degraded_ancestor_suppresses_descendant_degradation(
 def test_ipv4_failure_is_separated_from_healthy_ipv6(
     make_binding, make_observation, make_set
 ):
-    v4a = make_binding("4a", "IPv4 A", ROLE_IPV4_CONTROL)
-    v4b = make_binding("4b", "IPv4 B", ROLE_IPV4_CONTROL)
-    v6 = make_binding("6a", "IPv6 A", ROLE_IPV6_CONTROL)
+    v4a = make_binding("4a", "IPv4 A", ROLE_IPV4_CONTROL, target_fingerprint="v4a")
+    v4b = make_binding("4b", "IPv4 B", ROLE_IPV4_CONTROL, target_fingerprint="v4b")
+    v6 = make_binding("6a", "IPv6 A", ROLE_IPV6_CONTROL, target_fingerprint="v6a")
     result = classify(
         make_set(
             [
@@ -257,6 +257,27 @@ def test_ipv4_failure_is_separated_from_healthy_ipv6(
     )
     assert result.diagnosis == "General IPv4 failure"
     assert result.confidence == "high"
+
+
+
+
+def test_ipv4_duplicate_unknown_identity_does_not_get_high_confidence(
+    make_binding, make_observation, make_set
+):
+    v4a = make_binding("4a", "IPv4 A", ROLE_IPV4_CONTROL)
+    v4b = make_binding("4b", "IPv4 B", ROLE_IPV4_CONTROL)
+    v6 = make_binding("6a", "IPv6 A", ROLE_IPV6_CONTROL, target_fingerprint="v6a")
+    result = classify(
+        make_set(
+            [
+                make_observation(v4a, False),
+                make_observation(v4b, False),
+                make_observation(v6, True),
+            ]
+        )
+    )
+    assert result.diagnosis == "General IPv4 failure"
+    assert result.confidence == "medium"
 
 
 def test_wan_failure_with_reachable_gateway(make_binding, make_observation, make_set):

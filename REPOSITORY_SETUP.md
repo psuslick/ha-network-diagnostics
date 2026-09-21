@@ -4,7 +4,7 @@ The installable ZIP intentionally omits publication-only repository metadata so 
 
 ## Recommended privacy-first publication
 
-If an earlier prototype repository ever contained deployment-specific information and strict history privacy matters, create a **new clean repository** for v0.3.1 rather than layering this release on top of that history.
+If an earlier prototype repository ever contained deployment-specific information and strict history privacy matters, create a **new clean repository** for v0.3.2 rather than layering this release on top of that history.
 
 Extract the ZIP into the new repository root. Then finalize only the repository metadata:
 

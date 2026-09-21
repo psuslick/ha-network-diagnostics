@@ -1,6 +1,6 @@
-# Network Diagnostics v0.3.1 success criteria
+# Network Diagnostics v0.3.2 success criteria
 
-This file is the acceptance contract for the v0.3.1 package. It consolidates the decisions made through the prototype, privacy, architecture, and housekeeping reviews.
+This file is the acceptance contract for the v0.3.2 package. It consolidates the decisions made through the prototype, privacy, architecture, and housekeeping reviews.
 
 ## Product value
 
@@ -71,4 +71,11 @@ This file is the acceptance contract for the v0.3.1 package. It consolidates the
 43. **Setup state is not a fault state.** After the conservative pre-v0.3 migration clears inferred mappings, status must read `Setup required`, Coverage must read `Not configured`, and `Monitoring problem` must remain off until configured evidence actually becomes missing/stale/invalid.
 44. **Setup UX must explain what happened.** The panel and Repair issue must state that Kuma monitor discovery succeeded, report the number of discovered monitors, and direct the user to Network Diagnostics → Reconfigure. They must not present zero bindings as an outage.
 45. **Install artifact metadata must be immediately usable.** The package installed into Home Assistant must contain no `REPLACE_WITH_*` or equivalent unresolved publisher placeholders. Privacy is preserved by omitting publication-only ownership/URL fields until publication finalization, not by shipping fake values.
-46. **Patch upgrade must preserve the generic model.** v0.3.1 fixes integration visibility/setup UX/metadata without restoring vendor-specific sentinels, provider-specific profiles, magic friendly-name configuration, or private Uptime Kuma runtime access.
+46. **Patch upgrade must preserve the generic model.** v0.3.2 fixes integration visibility/setup UX/metadata without restoring vendor-specific sentinels, provider-specific profiles, magic friendly-name configuration, or private Uptime Kuma runtime access.
+
+## Refined criteria added after the v0.3.1 live configuration failure
+
+47. **DNS query name is not resolver identity.** For Kuma DNS monitors, Home Assistant's monitored-hostname value is the DNS query name. Network Diagnostics must never use that value to prove resolver equality or independence. If the resolver endpoint is not exposed through the supported public HA surface, endpoint identity is `unknown`.
+48. **Unknown independence is usable but not promoted.** Controls whose endpoint identity cannot be verified may participate in diagnosis and must not be blocked as duplicates merely because their target identity is unknown. They also must not increase independence-based coverage or confidence as though independence had been proven.
+49. **Portable configuration import.** Initial setup and reconfigure must offer a JSON file-upload path in addition to guided manual setup. The portable file identifies monitors by canonical Uptime Kuma names and may specify role, parent name, and service group. Import resolves those names to local stable monitor identities, validates against the currently discovered inventory, fails closed on missing/ambiguous/malformed references, and still requires the normal review/confirmation step before saving.
+50. **Import privacy boundary.** Portable configuration files must not require or accept monitored targets, credentials, Home Assistant entity IDs, config-entry IDs, or other deployment internals. The distributable repository may contain only a synthetic example. A user-specific import file may exist separately from the public package as local configuration data.

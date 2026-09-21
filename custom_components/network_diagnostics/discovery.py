@@ -20,7 +20,7 @@ from .const import (
 from .kuma_ids import split_kuma_unique_id
 from .observations import MonitorBinding
 from .tag_hints import TagHint, parse_tag_hint
-from .targets import select_raw_target, target_fingerprint, target_ip_version
+from .targets import monitor_target_semantics, select_raw_target
 
 UPTIME_KUMA_DOMAIN = "uptime_kuma"
 
@@ -141,11 +141,20 @@ def discover_kuma_inventory(hass: HomeAssistant) -> list[KumaMonitor]:
         url_entity = entities.get("url")
         hostname_entity = entities.get("hostname")
         port_entity = entities.get("port")
+        monitor_type = _state_value(hass, monitor_type_entity)
         raw_target = select_raw_target(
             url=_state_value(hass, url_entity),
             hostname=_state_value(hass, hostname_entity),
             port=_state_value(hass, port_entity),
         )
+        # For Kuma DNS monitors, Home Assistant's monitored-hostname entity is
+        # the DNS *query name*, not the resolver endpoint. Two independent
+        # resolvers can intentionally query the same hostname, so treating this
+        # value as endpoint identity creates a false duplicate-evidence blocker.
+        # The official HA integration currently does not expose a resolver-target
+        # entity we can safely use through the public registry/state boundary.
+        # Represent endpoint identity as unknown rather than guessing.
+        fingerprint, ip_version = monitor_target_semantics(monitor_type, raw_target)
         monitors.append(
             KumaMonitor(
                 monitor_id=monitor_id,
@@ -163,9 +172,9 @@ def discover_kuma_inventory(hass: HomeAssistant) -> list[KumaMonitor]:
                 ),
                 tags_entity=tags_entity.entity_id if tags_entity else None,
                 source_entry_id=entry_id,
-                monitor_type=_state_value(hass, monitor_type_entity),
-                target_fingerprint=target_fingerprint(raw_target),
-                target_ip_version=target_ip_version(raw_target),
+                monitor_type=monitor_type,
+                target_fingerprint=fingerprint,
+                target_ip_version=ip_version,
                 tag_hint=parse_tag_hint(_state_attributes(hass, tags_entity)),
             )
         )

@@ -46,7 +46,12 @@ Prerequisites:
 
 Install Network Diagnostics as a HACS custom integration and restart Home Assistant when HACS requests it. Network Diagnostics is a normal **service integration** and appears under **Settings → Devices & services → Integrations**. On a fresh install, add **Network Diagnostics** there. On an upgrade from the prototype/v0.3.0 migration state, open the existing **Network Diagnostics** entry and choose **Reconfigure** to complete the one-time generic topology setup.
 
-The setup flow:
+The setup/reconfigure flow first offers two paths:
+
+- **Configure manually** — the guided role/parent/service workflow.
+- **Upload configuration file** — import a portable JSON topology file, then review the exact same validation/coverage page before saving.
+
+Manual setup:
 
 1. discovers Kuma monitors already exposed by Home Assistant;
 2. asks which monitors should participate and what diagnostic role each has;
@@ -54,7 +59,9 @@ The setup flow:
 4. groups service-specific DNS/path controls when used;
 5. validates the evidence model and shows coverage gaps before saving.
 
-Reconfigure the integration later to change topology; removal/re-add is not required.
+Portable JSON import matches monitors by their canonical Uptime Kuma names and resolves those names to the local stable monitor identities at import time. It accepts only role/topology metadata (`name`, `role`, optional `parent`, optional `service`) and does not accept target addresses, credentials, HA entity IDs, or config-entry IDs. Missing or ambiguous names fail closed. See `examples/network-diagnostics-config.example.json`.
+
+Reconfigure the integration later to change topology or import a replacement file; removal/re-add is not required.
 
 See [KUMA_TAG_CONVENTION.md](KUMA_TAG_CONVENTION.md) for the optional Kuma Tags convention that can prefill setup when Home Assistant exposes an enabled Tags entity.
 
@@ -82,6 +89,13 @@ Roles represent semantics, not brands:
 - HTTPS Control
 
 Two independent Fixed Downstream Clients behind one reachable local node provide stronger evidence of a shared forwarding/downstream-path failure than one client alone.
+
+
+## DNS monitor endpoint identity
+
+For Uptime Kuma DNS monitors, Home Assistant's **monitored hostname** is the DNS query name, not the resolver endpoint. Two different resolvers can intentionally query the same hostname. Network Diagnostics therefore never fingerprints that query hostname as resolver identity.
+
+When the official Uptime Kuma integration does not expose the resolver endpoint through a supported public HA entity/state surface, resolver identity is treated as **unknown**: the DNS monitor remains usable evidence, but it does not create a duplicate-endpoint blocker and it does not increase independence-based confidence as though resolver independence had been proven.
 
 ## Adaptive latency degradation
 
@@ -154,8 +168,10 @@ The repository also includes HACS and hassfest GitHub Actions.
 The complete acceptance contract is [SUCCESS_CRITERIA.md](SUCCESS_CRITERIA.md).
 
 
-## Upgrade from v0.3.0
+## Upgrade from v0.3.0 / v0.3.1
 
-v0.3.1 corrects the first live-install UX defects found in v0.3.0. The integration is classified as an HA `service` so its loaded entry is visible on the normal Integrations page. If the v0.3 migration already cleared the old inferred mappings, the unconfigured state now reports **Setup required** / **Not configured** rather than presenting a false monitoring failure. Use the visible Network Diagnostics entry's **Reconfigure** flow to assign roles/topology once.
+v0.3.2 retains the v0.3.1 live-install UX fixes and also corrects the DNS resolver-independence false blocker found during live configuration. It additionally adds portable JSON configuration upload to initial setup and Reconfigure.
+
+v0.3.1 corrected the first live-install UX defects found in v0.3.0. The integration is classified as an HA `service` so its loaded entry is visible on the normal Integrations page. If the v0.3 migration already cleared the old inferred mappings, the unconfigured state now reports **Setup required** / **Not configured** rather than presenting a false monitoring failure. Use the visible Network Diagnostics entry's **Reconfigure** flow to assign roles/topology once.
 
 The patch does not restore the old vendor/provider-specific discovery profile and does not reintroduce private deployment data into source.

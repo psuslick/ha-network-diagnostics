@@ -5,12 +5,13 @@ ROOT = Path(__file__).resolve().parents[1]
 COMP = ROOT / "custom_components" / "network_diagnostics"
 
 
-def test_manifest_is_installable_privacy_safe_v031_service():
+def test_manifest_is_installable_privacy_safe_v032_service():
     manifest = json.loads((COMP / "manifest.json").read_text())
-    assert manifest["version"] == "0.3.1"
+    assert manifest["version"] == "0.3.2"
     assert manifest["domain"] == "network_diagnostics"
     assert manifest["integration_type"] == "service"
     assert "uptime_kuma" in manifest["dependencies"]
+    assert "file_upload" in manifest["dependencies"]
     assert "REPLACE_WITH_" not in json.dumps(manifest)
     assert isinstance(manifest.get("codeowners", []), list)
     for owner in manifest.get("codeowners", []):
@@ -27,11 +28,15 @@ def test_no_legacy_name_parser_or_private_kuma_runtime_dependency():
     assert ".runtime_data" not in discovery
 
 
-def test_config_flow_has_reconfigure_and_options_reload():
+def test_config_flow_has_reconfigure_options_reload_and_file_import():
     text = (COMP / "config_flow.py").read_text()
     assert "async_step_reconfigure" in text
     assert "async_update_reload_and_abort" in text
     assert "OptionsFlowWithReload" in text
+    assert "FileSelector" in text
+    assert "process_uploaded_file" in text
+    assert "async_step_upload_config" in text
+    assert (COMP / "config_import.py").exists()
 
 
 def test_unconfigured_setup_state_is_not_network_incident_or_monitoring_fault():
@@ -76,3 +81,17 @@ def test_source_has_no_vendor_specific_profile_module():
     )
     for forbidden in ("LEGACY_VENDOR_PROFILE", "DEPLOYMENT_SENTINELS"):
         assert forbidden not in combined
+
+
+def test_dns_query_hostname_regression_is_documented_in_source():
+    discovery = (COMP / "discovery.py").read_text()
+    targets = (COMP / "targets.py").read_text()
+    assert "query name" in discovery
+    assert "monitor_target_semantics" in targets
+    assert 'if monitor_type == "dns"' in targets
+
+
+def test_success_contract_includes_import_and_dns_identity_rules():
+    criteria = (ROOT / "SUCCESS_CRITERIA.md").read_text()
+    assert "Portable configuration import" in criteria
+    assert "DNS query name is not resolver identity" in criteria

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 DOMAIN = "network_diagnostics"
 NAME = "Network Diagnostics"
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 CONFIG_VERSION = 3
 STORAGE_VERSION = 3
 STORAGE_KEY_PREFIX = "network_diagnostics.incidents"

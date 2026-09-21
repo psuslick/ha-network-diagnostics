@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.1
+## 0.3.2
 
 - Changed Home Assistant `integration_type` from `helper` to `service` so Network Diagnostics is visible and manageable on the normal Integrations page.
 - Changed the conservative migrated/unconfigured state from `Monitoring incomplete` to `Setup required`.

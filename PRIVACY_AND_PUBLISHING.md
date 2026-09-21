@@ -16,7 +16,7 @@ If the requirement is that the project not be publicly associated with a persona
 
 Replacing files in an existing Git repository does **not** remove sensitive data from earlier commits. If an earlier prototype containing deployment-specific information was pushed publicly, meeting a strict "never present in repository history" requirement requires either:
 
-- publishing v0.3.1 from a new clean repository, or
+- publishing v0.3.2 from a new clean repository, or
 - rewriting the old repository history and force-pushing the rewritten history after independently verifying it.
 
 Creating a new clean repository is the simpler and lower-risk option.
@@ -26,3 +26,9 @@ Creating a new clean repository is the simpler and lower-risk option.
 `python tools/check_privacy.py` rejects common accidental disclosures in repository text, including MAC-like addresses, non-documentation IP literals, and non-example email addresses. It also rejects direct network-client imports inside the integration because raw probing belongs to Uptime Kuma.
 
 This automated check is a guardrail, not a proof that arbitrary free-form text contains no personal information. Human review remains required before publication.
+
+## Portable configuration files
+
+v0.3.2 supports importing role/topology configuration from JSON. The distributable repository contains only a synthetic example. A real user's import file is local configuration data and must not be committed into the public package/repository unless intentionally sanitized.
+
+The import format accepts canonical Kuma monitor names plus semantic role/parent/service metadata. It does not accept monitored targets, credentials, Home Assistant entity IDs, config-entry IDs, MAC addresses, or other endpoint details.

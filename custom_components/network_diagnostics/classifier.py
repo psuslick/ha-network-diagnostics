@@ -92,6 +92,17 @@ def _names(items: Iterable[Observation]) -> tuple[str, ...]:
     return tuple(item.binding.name for item in items)
 
 
+def _confirmed_independent(items: Iterable[Observation], minimum: int = 2) -> bool:
+    """Return True only when distinct endpoint identity is actually known."""
+    usable = [item for item in items if item.status is not None]
+    fingerprints = {
+        item.binding.target_fingerprint
+        for item in usable
+        if item.binding.target_fingerprint
+    }
+    return len(fingerprints) >= minimum
+
+
 def _failed_names(obs: ObservationSet) -> tuple[str, ...]:
     return tuple(item.binding.name for item in obs.observations if item.status is False)
 
@@ -601,7 +612,7 @@ def classify(
             RootCause(
                 "General IPv4 failure",
                 "internet",
-                "high" if len(_usable(ipv4)) >= 2 else "medium",
+                "high" if _confirmed_independent(ipv4) else "medium",
                 supporting=(
                     "All configured IPv4 controls are down while at least one IPv6 control remains healthy.",
                 ),
@@ -620,7 +631,7 @@ def classify(
             RootCause(
                 "General IPv6 failure",
                 "internet",
-                "high" if len(_usable(ipv6)) >= 2 else "medium",
+                "high" if _confirmed_independent(ipv6) else "medium",
                 supporting=(
                     "All configured IPv6 controls are down while at least one IPv4 control remains healthy.",
                 ),
@@ -678,7 +689,7 @@ def classify(
                 RootCause(
                     "General DNS failure",
                     "dns",
-                    "high" if len(_usable(dns_neutral)) >= 2 else "medium",
+                    "high" if _confirmed_independent(dns_neutral) else "medium",
                     supporting=(
                         "Independent DNS controls are failing while general IP reachability remains available.",
                     ),
@@ -738,7 +749,7 @@ def classify(
                     RootCause(
                         f"{service} DNS-service failure",
                         f"service:{service}",
-                        "high" if len(_usable(service_dns)) >= 2 and service_path else "medium",
+                        "high" if _confirmed_independent(service_dns) and service_path else "medium",
                         supporting=(
                             f"{service} DNS checks fail while its path and Independent DNS remain healthy.",
                         ),

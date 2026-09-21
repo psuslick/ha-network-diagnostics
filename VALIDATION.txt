@@ -1,27 +1,24 @@
-Network Diagnostics v0.3.1 — package validation
+Network Diagnostics v0.3.2 — package validation
 
-STATUS TARGET: PACKAGE-VALIDATED (not live VERIFIED)
+STATUS: PACKAGE-VALIDATED (not live VERIFIED)
 
 Acceptance contract:
-  SUCCESS_CRITERIA.md, criteria 1-46.
+  SUCCESS_CRITERIA.md, criteria 1-50.
 
-Live finding carried into this patch:
-  - v0.3.0 was installed and its config entry loaded.
-  - The live integration discovered the available Uptime Kuma monitors.
-  - The first live acceptance failure was the integration/upgrade UX layer:
-      * integration_type=helper kept the loaded entry off the normal Integrations page;
-      * conservative one-time migration appeared as Monitoring incomplete / Monitoring problem;
-      * the install manifest still contained publication placeholders.
+Live findings carried into this patch:
+  - v0.3.0 loaded and discovered Kuma monitors but failed its first live UX acceptance test.
+  - v0.3.1 corrected Integrations-page visibility, setup-state UX, and install-manifest metadata.
+  - v0.3.1 then failed live Reconfigure because two DNS monitors querying the same hostname were falsely classified as the same resolver endpoint.
 
-Corrective behavior in v0.3.1:
-  - integration_type=service.
-  - Unconfigured migrated state = Setup required.
-  - Coverage while unconfigured = Not configured.
-  - Monitoring problem remains off for setup-only state.
-  - Setup state cannot open a network incident.
-  - Panel/Repair copy directs the user to Settings → Devices & services → Integrations → Network Diagnostics → Reconfigure and reports discovered Kuma monitor count.
-  - Installable manifest has no unresolved publication placeholders and no personal publisher identity.
-  - Publication metadata remains an explicit later finalization step.
+Corrective behavior in v0.3.2:
+  - DNS monitored hostname/query name is never treated as resolver endpoint identity.
+  - When resolver endpoint identity is unavailable through the supported public HA surface, identity is unknown rather than guessed.
+  - Unknown identity does not block configuration as duplicate evidence.
+  - Unknown identity also does not increase independence-based coverage/confidence.
+  - Initial setup and Reconfigure offer native JSON configuration upload as an alternative to the guided manual flow.
+  - Portable import matches canonical Kuma monitor names, resolves them to local stable monitor identities, validates missing/ambiguous/invalid references, and requires the same final review step before saving.
+  - Portable import deliberately excludes monitored targets, credentials, HA entity IDs, and config-entry IDs.
+  - A generic synthetic example is included in the distributable source; user-specific import files remain outside the package.
 
 Preserved architecture:
   - Uptime Kuma is the raw probe/history authority.
@@ -34,17 +31,27 @@ Preserved architecture:
   - Downloaded diagnostics remain privacy-reduced.
   - Home Assistant Recorder configuration is not modified.
 
-Validation completed before exact artifact build:
-  - 52 automated tests pass on the source tree.
-  - Python source/tests/tools compile successfully.
-  - Sidebar JavaScript passes Node syntax validation.
-  - Privacy validator passes.
-  - Repository/source-manifest validation passes.
-  - Publication-finalization simulation adds synthetic neutral GitHub metadata, then the same 52 tests, privacy check, Python compile, JavaScript syntax check, source-manifest check, and repository check all pass.
+Final source-tree validation:
+  - 64 automated tests passed.
+  - Python source/tests/tools compiled successfully.
+  - Sidebar JavaScript passed Node syntax validation.
+  - Privacy validator passed.
+  - Repository/source-manifest validation passed.
 
-Automatic retry history:
-  1. The first source repository-check attempt failed because the prior pytest/compile runs left __pycache__/.pytest_cache files in the staged tree. These are build artifacts, not source defects. The staged tree was cleaned, the source manifest regenerated, and repository validation passed.
-  2. The first publication-finalization simulation failed because finalize_repo.py's import of the manifest generator created tools/__pycache__ before the repository cleanliness check. The simulation was rerun with bytecode disabled plus explicit cleanup. The finalized tree then passed the complete validation chain.
+Publication-finalization simulation:
+  - Copied the release source into a clean staging tree.
+  - Added neutral synthetic GitHub repository/codeowner metadata through finalize_repo.py.
+  - The same 64 tests passed.
+  - Python compilation, JavaScript syntax, privacy validation, regenerated source manifest, and repository validation with required publication metadata all passed.
+
+Portable import validation:
+  - Generic import parser tests cover canonical-name resolution, stable local ID resolution, parent conversion, service groups, missing names, ambiguous names, unknown fields/roles, and format-version rejection.
+  - A separate local user-specific import file was validated as an 18-monitor model with two parent relationships and eight service-group controls. It is intentionally not part of the distributable repository.
+
+Exact-artifact validation:
+  - The final ZIP was extracted into a clean directory.
+  - The same 64 tests, Python compilation, JavaScript syntax check, privacy check, source-manifest check, and repository validation passed against the exact extracted bytes.
+  - SHA-256 checksum verification passed.
 
 Important boundary:
-  PACKAGE-VALIDATED establishes package/repository integrity and regression coverage for the live defects found in v0.3.0. v0.3.1 must still be installed/restarted and checked in the real Home Assistant UI before it can be marked VERIFIED. No live Home Assistant configuration was modified by this build.
+  PACKAGE-VALIDATED establishes package/repository integrity and regression coverage. v0.3.2 must still be installed/restarted and taken through the real Home Assistant Reconfigure/import flow before it can be marked VERIFIED. No live Home Assistant configuration was modified by this build.

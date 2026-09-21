@@ -1,0 +1,33 @@
+{
+  "format": "network_diagnostics",
+  "version": 1,
+  "monitors": [
+    {
+      "name": "Gateway A",
+      "role": "Gateway"
+    },
+    {
+      "name": "Mesh Node A",
+      "role": "Mesh / Wireless Node",
+      "parent": "Gateway A"
+    },
+    {
+      "name": "Internet IPv4 A",
+      "role": "IPv4 Internet Control"
+    },
+    {
+      "name": "Independent DNS A",
+      "role": "Independent DNS Control"
+    },
+    {
+      "name": "Service DNS A",
+      "role": "Service DNS Control",
+      "service": "Service A"
+    },
+    {
+      "name": "Service Path A",
+      "role": "Service Path Control",
+      "service": "Service A"
+    }
+  ]
+}

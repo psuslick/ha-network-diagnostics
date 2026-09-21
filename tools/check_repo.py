@@ -15,7 +15,7 @@ from generate_source_manifest import build_manifest_lines
 
 ROOT = Path(__file__).resolve().parents[1]
 COMP = ROOT / "custom_components" / "network_diagnostics"
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 
 
 def fail(message: str) -> None:
@@ -45,7 +45,7 @@ def main() -> int:
         ROOT / "KUMA_TAG_CONVENTION.md",
         ROOT / "PRIVACY_AND_PUBLISHING.md",
         ROOT / "DECISIONS_AND_HANDOFF.md",
-        ROOT / "RELEASE_NOTES_v0.3.1.md",
+        ROOT / "RELEASE_NOTES_v0.3.2.md",
         ROOT / "REPOSITORY_SETUP.md",
         ROOT / "CHANGELOG.md",
         ROOT / "STATUS.md",
@@ -64,12 +64,14 @@ def main() -> int:
         COMP / "topology.py",
         COMP / "baseline.py",
         COMP / "validation.py",
+        COMP / "config_import.py",
         COMP / "tag_hints.py",
         COMP / "diagnostics.py",
         COMP / "system_health.py",
         COMP / "translations" / "en.json",
         COMP / "frontend" / "network-diagnostics-panel.js",
         ROOT / "tools" / "check_privacy.py",
+        ROOT / "examples" / "network-diagnostics-config.example.json",
     ]
     for path in required:
         if not path.is_file():
@@ -99,7 +101,7 @@ def main() -> int:
         fail("manifest integration_type must be service")
 
     required_dependencies = {
-        "frontend", "http", "panel_custom", "uptime_kuma", "websocket_api"
+        "file_upload", "frontend", "http", "panel_custom", "uptime_kuma", "websocket_api"
     }
     missing_deps = sorted(required_dependencies - set(manifest.get("dependencies", [])))
     if missing_deps:
@@ -139,6 +141,9 @@ def main() -> int:
         "async_step_reconfigure",
         "async_update_reload_and_abort",
         "OptionsFlowWithReload",
+        "async_step_upload_config",
+        "FileSelector",
+        "process_uploaded_file",
     ):
         if required_text not in config_flow_text:
             fail(f"config_flow.py missing {required_text}")
@@ -218,6 +223,8 @@ def main() -> int:
         "Reconfigure",
         "Coverage remains",
         "service integration",
+        "Upload configuration file",
+        "DNS query name",
     ):
         if phrase.casefold() not in readme.casefold():
             fail(f"README does not document required concept: {phrase}")
@@ -228,6 +235,8 @@ def main() -> int:
         "Kuma Tags are optional hints",
         "Normal Integrations visibility",
         "Setup state is not a fault state",
+        "Portable configuration import",
+        "DNS query name is not resolver identity",
     ):
         if phrase not in criteria:
             fail(f"success criteria are missing: {phrase}")

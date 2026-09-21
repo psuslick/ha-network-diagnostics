@@ -60,9 +60,28 @@ def _duplicate_independence_gaps(bindings: list[MonitorBinding]) -> list[str]:
 
 
 def _independent_count(items: list[MonitorBinding]) -> int:
-    fingerprints = {item.target_fingerprint for item in items if item.target_fingerprint}
-    unknown = sum(1 for item in items if not item.target_fingerprint)
-    return len(fingerprints) + unknown
+    """Count only endpoint identities that Home Assistant lets us verify as distinct."""
+    return len({item.target_fingerprint for item in items if item.target_fingerprint})
+
+
+def _unknown_independence_warnings(bindings: list[MonitorBinding]) -> list[str]:
+    grouped: dict[tuple[str, str | None], list[MonitorBinding]] = defaultdict(list)
+    for item in bindings:
+        if item.role not in _INDEPENDENT_ROLES:
+            continue
+        service = item.service.casefold() if item.service else None
+        grouped[(item.role, service)].append(item)
+
+    warnings: list[str] = []
+    for items in grouped.values():
+        if len(items) < 2 or all(item.target_fingerprint for item in items):
+            continue
+        names = ", ".join(sorted(item.name for item in items))
+        warnings.append(
+            f"Endpoint identity is unavailable for one or more controls in this evidence set ({names}); "
+            "they remain usable evidence, but Network Diagnostics will not assume they are independent or increase independence-based confidence"
+        )
+    return warnings
 
 
 def validate_bindings(bindings: list[MonitorBinding]) -> tuple[list[str], list[str]]:
@@ -102,11 +121,8 @@ def validate_bindings(bindings: list[MonitorBinding]) -> tuple[list[str], list[s
             blockers.append(
                 f"{item.name} is assigned a service-specific role but has no service group name"
             )
-        if item.role in _INDEPENDENT_ROLES and not item.target_fingerprint:
-            warnings.append(
-                f"{item.name} does not expose a usable target through Home Assistant, so endpoint independence cannot be verified"
-            )
 
+    warnings.extend(_unknown_independence_warnings(bindings))
     blockers.extend(_duplicate_independence_gaps(bindings))
     topo_warnings, topo_blockers = validate_topology(bindings)
     warnings.extend(topo_warnings)

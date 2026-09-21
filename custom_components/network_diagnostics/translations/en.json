@@ -57,13 +57,40 @@
       "confirm": {
         "title": "Review diagnostic model",
         "description": "Configured monitors: **{configured_count}**\n\n**Configuration blockers**\n{blockers}\n\n**Warnings**\n{warnings}\n\n**Coverage not yet available**\n{coverage}\n\nCoverage gaps do not make healthy configured evidence invalid; they describe fault classes that cannot yet be distinguished. Blockers must be corrected before saving."
+      },
+      "user": {
+        "title": "Set up Network Diagnostics",
+        "description": "Choose guided manual setup or import a portable Network Diagnostics JSON configuration file.",
+        "menu_options": {
+          "manual": "Configure manually",
+          "upload_config": "Upload configuration file"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Network Diagnostics",
+        "description": "Choose guided manual setup or import a portable Network Diagnostics JSON configuration file. Nothing is saved until the review step is confirmed.",
+        "menu_options": {
+          "manual": "Configure manually",
+          "upload_config": "Upload configuration file"
+        }
+      },
+      "upload_config": {
+        "title": "Upload Network Diagnostics configuration",
+        "description": "Upload a JSON file using the Network Diagnostics portable configuration format. The file matches monitors by their canonical Uptime Kuma names, then resolves them to stable local monitor identities. Monitored targets, credentials, and Home Assistant entity IDs are not accepted.\n\n**Last import error:** {import_error}",
+        "data": {
+          "config_file": "Configuration file"
+        },
+        "data_description": {
+          "config_file": "JSON only, maximum 256 KiB. Imported roles/topology are validated against monitors currently discovered from Uptime Kuma before they can be saved."
+        }
       }
     },
     "error": {
       "duplicate_monitor_assignment": "A Kuma monitor was assigned to more than one diagnostic role.",
       "no_monitors_selected": "Assign at least one Kuma monitor.",
       "service_required": "Enter a service name.",
-      "configuration_blocked": "Correct the configuration blockers before saving."
+      "configuration_blocked": "Correct the configuration blockers before saving.",
+      "invalid_config_file": "The uploaded Network Diagnostics configuration file is invalid. See the error shown above."
     },
     "abort": {
       "single_instance_allowed": "Only one Network Diagnostics instance is supported.",
@@ -105,7 +132,7 @@
   "issues": {
     "configuration_required": {
       "title": "Network Diagnostics one-time setup is required",
-      "description": "Network Diagnostics is installed and found {count} Uptime Kuma monitor(s), but diagnostic roles/topology have not been configured. Go to Settings → Devices & services → Integrations → Network Diagnostics and choose Reconfigure. This is a setup state, not a network outage."
+      "description": "Network Diagnostics is installed and found {count} Uptime Kuma monitor(s), but diagnostic roles/topology have not been configured. Go to Settings \u2192 Devices & services \u2192 Integrations \u2192 Network Diagnostics and choose Reconfigure. This is a setup state, not a network outage."
     },
     "configured_monitor_missing": {
       "title": "Configured diagnostic monitors are missing",

@@ -39,11 +39,23 @@ def test_service_roles_require_a_group(make_binding):
     assert any("service group" in item for item in blockers)
 
 
-def test_unknown_target_is_warning_not_blocker(make_binding):
-    binding = make_binding("a", "IPv4 A", ROLE_IPV4_CONTROL, target_fingerprint=None)
-    warnings, blockers = validate_bindings([binding])
-    assert any("independence cannot be verified" in item for item in warnings)
+def test_multiple_unknown_targets_warn_but_do_not_block(make_binding):
+    bindings = [
+        make_binding("a", "Service DNS A", ROLE_SERVICE_DNS, service="Service A", monitor_type="dns", target_fingerprint=None),
+        make_binding("b", "Service DNS B", ROLE_SERVICE_DNS, service="Service A", monitor_type="dns", target_fingerprint=None),
+    ]
+    warnings, blockers = validate_bindings(bindings)
+    assert any("will not assume they are independent" in item for item in warnings)
     assert not blockers
+
+
+def test_dns_same_query_name_unknown_endpoint_does_not_false_block(make_binding):
+    bindings = [
+        make_binding("a", "Service DNS A", ROLE_SERVICE_DNS, service="Service A", monitor_type="dns", target_fingerprint=None),
+        make_binding("b", "Service DNS B", ROLE_SERVICE_DNS, service="Service A", monitor_type="dns", target_fingerprint=None),
+    ]
+    _warnings, blockers = validate_bindings(bindings)
+    assert not any("same endpoint" in item for item in blockers)
 
 
 def test_full_generic_evidence_reports_key_capabilities(make_binding):
