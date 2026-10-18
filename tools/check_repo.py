@@ -15,7 +15,7 @@ from generate_source_manifest import build_manifest_lines
 
 ROOT = Path(__file__).resolve().parents[1]
 COMP = ROOT / "custom_components" / "network_diagnostics"
-VERSION = "0.3.2"
+VERSION = "0.4.0"
 
 
 def fail(message: str) -> None:
@@ -45,7 +45,7 @@ def main() -> int:
         ROOT / "KUMA_TAG_CONVENTION.md",
         ROOT / "PRIVACY_AND_PUBLISHING.md",
         ROOT / "DECISIONS_AND_HANDOFF.md",
-        ROOT / "RELEASE_NOTES_v0.3.2.md",
+        ROOT / "RELEASE_NOTES_v0.4.0.md",
         ROOT / "REPOSITORY_SETUP.md",
         ROOT / "CHANGELOG.md",
         ROOT / "STATUS.md",

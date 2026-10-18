@@ -65,3 +65,29 @@ def test_unknown_monitors_are_removed_from_ram():
     )
     tracker.remove_unknown({"new-node"})
     assert "old-node" not in tracker.samples
+
+
+def test_nonfinite_and_negative_values_never_poison_baseline():
+    tracker = BaselineTracker(
+        window_minutes=60, min_samples=4, ratio_threshold=2.0,
+        min_delta_ms=10, degradation_seconds=60,
+    )
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    for index, value in enumerate([float("nan"), float("inf"), -5.0, 5.0]):
+        tracker.update("a", observed_at=now + timedelta(seconds=index), response_ms=value)
+    assert len(tracker.samples["a"]) == 1
+    assert tracker.samples["a"][0][1] == 5.0
+
+
+def test_missing_reading_resets_sustained_degradation_timer():
+    tracker = BaselineTracker(
+        window_minutes=60, min_samples=4, ratio_threshold=2.0,
+        min_delta_ms=10, degradation_seconds=60,
+    )
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    for index in range(4):
+        tracker.update("a", observed_at=now + timedelta(seconds=index * 10), response_ms=5.0)
+    tracker.update("a", observed_at=now + timedelta(seconds=40), response_ms=40.0)
+    tracker.update("a", observed_at=now + timedelta(seconds=41), response_ms=None)
+    current = tracker.update("a", observed_at=now + timedelta(seconds=110), response_ms=42.0)
+    assert not current.sustained

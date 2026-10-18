@@ -1,57 +1,30 @@
-Network Diagnostics v0.3.2 — package validation
+Network Diagnostics v0.4.0 — release candidate validation
 
-STATUS: PACKAGE-VALIDATED (not live VERIFIED)
+STATUS: PACKAGE-VALIDATED (not live VERIFIED in Home Assistant)
 
-Acceptance contract:
-  SUCCESS_CRITERIA.md, criteria 1-50.
+Source: v0.3.2 user-provided repository, extended without modifying any
+live Home Assistant configuration, Uptime Kuma instance, or network device.
 
-Live findings carried into this patch:
-  - v0.3.0 loaded and discovered Kuma monitors but failed its first live UX acceptance test.
-  - v0.3.1 corrected Integrations-page visibility, setup-state UX, and install-manifest metadata.
-  - v0.3.1 then failed live Reconfigure because two DNS monitors querying the same hostname were falsely classified as the same resolver endpoint.
+Automated regression suite:
+  80 tests passed, covering the existing topology/classifier/baseline/import/
+  package contracts plus new intermittent-reachability, stale-evidence,
+  input-sanity, downstream-attribution and triage behavior.
 
-Corrective behavior in v0.3.2:
-  - DNS monitored hostname/query name is never treated as resolver endpoint identity.
-  - When resolver endpoint identity is unavailable through the supported public HA surface, identity is unknown rather than guessed.
-  - Unknown identity does not block configuration as duplicate evidence.
-  - Unknown identity also does not increase independence-based coverage/confidence.
-  - Initial setup and Reconfigure offer native JSON configuration upload as an alternative to the guided manual flow.
-  - Portable import matches canonical Kuma monitor names, resolves them to local stable monitor identities, validates missing/ambiguous/invalid references, and requires the same final review step before saving.
-  - Portable import deliberately excludes monitored targets, credentials, HA entity IDs, and config-entry IDs.
-  - A generic synthetic example is included in the distributable source; user-specific import files remain outside the package.
+Safety checks:
+  - No direct network probes or target probing libraries added.
+  - All source configuration and private deployment identifiers remain outside
+    the distributable tree.
+  - Privacy gate passed.
+  - JavaScript syntax check passed.
+  - Python syntax and repository/manifest checks passed.
+  - Source manifest and extracted ZIP contents checked before handoff.
 
-Preserved architecture:
-  - Uptime Kuma is the raw probe/history authority.
-  - Network Diagnostics performs no duplicate network probes.
-  - Generic explicit topology/roles; no vendor/provider deployment profile restored.
-  - Kuma Tags are optional setup hints, not runtime authority.
-  - Public HA registries/states only; no Uptime Kuma private runtime_data access.
-  - Adaptive response-time samples are bounded RAM-only.
-  - Persistent Network Diagnostics history is compact derived incident data only.
-  - Downloaded diagnostics remain privacy-reduced.
-  - Home Assistant Recorder configuration is not modified.
+Important limitations:
+  - The added flapping and latency detection depends on changes actually
+    exposed as fresh statuses/response data by the official Kuma integration.
+  - ICMP reachability cannot rule out a device-command/application failure.
+  - The candidate has not been installed or live-tested in Home Assistant.
+  - No installation, user topology import, or third-party integration mutation
+    has been attempted by this build.
 
-Final source-tree validation:
-  - 64 automated tests passed.
-  - Python source/tests/tools compiled successfully.
-  - Sidebar JavaScript passed Node syntax validation.
-  - Privacy validator passed.
-  - Repository/source-manifest validation passed.
-
-Publication-finalization simulation:
-  - Copied the release source into a clean staging tree.
-  - Added neutral synthetic GitHub repository/codeowner metadata through finalize_repo.py.
-  - The same 64 tests passed.
-  - Python compilation, JavaScript syntax, privacy validation, regenerated source manifest, and repository validation with required publication metadata all passed.
-
-Portable import validation:
-  - Generic import parser tests cover canonical-name resolution, stable local ID resolution, parent conversion, service groups, missing names, ambiguous names, unknown fields/roles, and format-version rejection.
-  - A separate local user-specific import file was validated as an 18-monitor model with two parent relationships and eight service-group controls. It is intentionally not part of the distributable repository.
-
-Exact-artifact validation:
-  - The final ZIP was extracted into a clean directory.
-  - The same 64 tests, Python compilation, JavaScript syntax check, privacy check, source-manifest check, and repository validation passed against the exact extracted bytes.
-  - SHA-256 checksum verification passed.
-
-Important boundary:
-  PACKAGE-VALIDATED establishes package/repository integrity and regression coverage. v0.3.2 must still be installed/restarted and taken through the real Home Assistant Reconfigure/import flow before it can be marked VERIFIED. No live Home Assistant configuration was modified by this build.
+Release artifact: a repository-root ZIP for a HACS GitHub tag/release.

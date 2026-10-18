@@ -124,6 +124,8 @@ class RuntimeSnapshot:
                     "baseline_state": item.get("baseline_state"),
                     "baseline_median_ms": item.get("baseline_median_ms"),
                     "baseline_ratio": item.get("baseline_ratio"),
+                    "recent_outages_15m": item.get("recent_outages_15m"),
+                    "flapping": item.get("flapping"),
                 }
                 for item in self.observations
             ],

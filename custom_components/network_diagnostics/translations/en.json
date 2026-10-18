@@ -163,6 +163,9 @@
       },
       "incidents_24h": {
         "name": "Incidents 24h"
+      },
+      "flapping_monitors": {
+        "name": "Flapping monitors"
       }
     },
     "binary_sensor": {

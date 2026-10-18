@@ -5,7 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
 from urllib.parse import urlparse
+
+# Finalizing the repository must not generate cache files that make the
+# repository privacy/source-manifest gate reject the resulting tree.
+sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "custom_components" / "network_diagnostics" / "manifest.json"

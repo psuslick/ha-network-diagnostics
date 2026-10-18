@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-import hashlib
 import logging
+from math import isfinite
 from typing import Any
 from uuid import uuid4
 
@@ -40,6 +40,7 @@ from .const import (
     ISSUE_INVALID_CONFIGURATION,
     ISSUE_STALE_PROVIDER,
     ROLE_DISPLAY_NAMES,
+    ROLE_FIXED_CLIENT,
     ROLE_GATEWAY,
     ROLE_MESH_NODE,
     ROLE_NETWORK_NODE,
@@ -49,8 +50,11 @@ from .const import (
     VERSION,
 )
 from .discovery import DiscoveryResult, configured_bindings
+from .fingerprint import incident_fingerprint
 from .models import IncidentRecord, IncidentTransition, RuntimeSnapshot
 from .observations import Observation, ObservationSet
+from .quality import QualityAssessment, QualityTracker
+from .triage import triage_recommendations
 from .topology import topology_payload
 from .validation import coverage_capabilities, coverage_gaps, validate_bindings
 
@@ -112,6 +116,8 @@ class NetworkDiagnosticsRuntime:
             min_delta_ms=float(self.option(CONF_BASELINE_MIN_DELTA_MS)),
             degradation_seconds=int(self.option(CONF_DEGRADATION_SECONDS)),
         )
+        self._quality = QualityTracker()
+        self._quality_assessments: dict[str, QualityAssessment] = {}
 
     def option(self, key: str) -> Any:
         return self.entry.options.get(key, BEHAVIOR_DEFAULTS[key])
@@ -222,9 +228,12 @@ class NetworkDiagnosticsRuntime:
             "Adaptive latency baselines are intentionally RAM-only and relearn after a Home Assistant restart.",
             "Kuma Tags are optional setup hints. Confirmed role/topology assignments are stored in this integration's config entry.",
             "Network Diagnostics can only diagnose properties represented by configured monitors; vendor-specific link/backhaul quality is not inferred from reachability alone.",
+            "Reachability alone does not prove device commands, wireless motion events, or application protocols are working; correlate application logs separately.",
+            "Intermittent status tracking uses a RAM-only 15-minute window of Kuma state transitions and resets after restart.",
         ]
         valid_ids = {item.monitor_id for item in self.discovery.bindings}
         self._baseline.remove_unknown(valid_ids)
+        self._quality.remove_unknown(valid_ids)
         self._sync_configuration_repairs()
         current = {
             (
@@ -330,7 +339,7 @@ class NetworkDiagnosticsRuntime:
             value = float(state.state)
         except (TypeError, ValueError):
             return None, self._reported_at(state)
-        return value, self._reported_at(state)
+        return (value if isfinite(value) and value >= 0 else None), self._reported_at(state)
 
     def _collect_observations(
         self, now: datetime
@@ -342,6 +351,7 @@ class NetworkDiagnosticsRuntime:
             unassigned_monitors=list(self.discovery.unassigned_monitors),
         )
         degraded: dict[str, BaselineAssessment] = {}
+        self._quality_assessments = {}
         ages: list[float] = []
 
         for binding in self.discovery.bindings:
@@ -378,14 +388,21 @@ class NetworkDiagnosticsRuntime:
                     )
 
             response_ms, response_at = self._response_value(binding.response_entity)
+            if response_at is not None and (now - response_at).total_seconds() > int(
+                self.option(CONF_STALE_SECONDS)
+            ):
+                response_ms = None
             sample_at = response_at or heartbeat_at or now
             assessment = self._baseline.update(
                 binding.monitor_id,
                 observed_at=sample_at,
                 response_ms=response_ms if fresh and status is True else None,
             )
-            if binding.role in {ROLE_GATEWAY, ROLE_NETWORK_NODE, ROLE_MESH_NODE}:
+            if binding.role in {ROLE_GATEWAY, ROLE_NETWORK_NODE, ROLE_MESH_NODE, ROLE_FIXED_CLIENT}:
                 degraded[binding.monitor_id] = assessment
+            self._quality_assessments[binding.monitor_id] = self._quality.update(
+                binding.monitor_id, observed_at=now, status=status
+            )
             result.observations.append(
                 Observation(
                     binding=binding,
@@ -412,6 +429,7 @@ class NetworkDiagnosticsRuntime:
         parent_names = {
             binding.monitor_id: binding.name for binding in self.discovery.bindings
         }
+        quality = self._quality_assessments.get(item.binding.monitor_id, QualityAssessment())
         return {
             "name": item.binding.name,
             "role": item.binding.role,
@@ -437,6 +455,9 @@ class NetworkDiagnosticsRuntime:
             if item.baseline_ratio is not None
             else None,
             "baseline_sample_count": item.baseline_sample_count,
+            "recent_outages_15m": quality.recent_outages,
+            "flapping": quality.flapping,
+            "last_recovery": quality.last_recovery,
         }
 
     async def async_analyze(self, *, manual: bool = False) -> RuntimeSnapshot:
@@ -445,7 +466,11 @@ class NetworkDiagnosticsRuntime:
             if manual and self._rediscover():
                 self._subscribe_sources()
             observations, degraded = self._collect_observations(now)
-            result = classify(observations, degraded_nodes=degraded)
+            result = classify(
+                observations,
+                degraded_nodes=degraded,
+                unstable_nodes=self._quality_assessments,
+            )
             snapshot = RuntimeSnapshot(
                 at=now.isoformat(),
                 diagnosis=result,
@@ -545,16 +570,7 @@ class NetworkDiagnosticsRuntime:
     def _fingerprint(
         self, result: DiagnosisResult, observations: ObservationSet
     ) -> str:
-        domains = sorted(cause.domain for cause in result.root_causes) or [
-            result.diagnosis
-        ]
-        failed_ids = sorted(
-            item.binding.monitor_id
-            for item in observations.observations
-            if item.status is False
-        )
-        raw = "|".join([*domains, *failed_ids])
-        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+        return incident_fingerprint(result, observations)
 
     async def _process_incident(
         self, now: datetime, snapshot: RuntimeSnapshot, observations: ObservationSet
@@ -802,4 +818,5 @@ class NetworkDiagnosticsRuntime:
             "similar_incident_count": self.similar_incident_count(),
             "last_manual_analysis": self.last_manual_analysis,
             "discovery": self.discovery.as_dict(),
+            "next_checks": triage_recommendations(self.current) if self.current else [],
         }

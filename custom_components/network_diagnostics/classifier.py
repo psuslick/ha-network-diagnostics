@@ -21,6 +21,7 @@ from .const import (
     ROLE_SERVICE_PATH,
 )
 from .observations import Observation, ObservationSet
+from .quality import QualityAssessment
 from .topology import ancestor_ids, children_map, failed_root_nodes, path_names
 
 HEALTHY = "Healthy"
@@ -386,14 +387,14 @@ def _topology_causes(
             if len(failed_clients) >= 2:
                 causes.append(
                     RootCause(
-                        f"{parent.binding.name} downstream/forwarding path failure",
+                        f"Multiple endpoints unreachable behind {parent.binding.name}",
                         "topology",
-                        "high",
+                        "medium",
                         supporting=(
-                            f"Multiple Fixed Downstream Clients behind {parent.binding.name} are down while the parent remains reachable.",
+                            f"Multiple Fixed Downstream Clients behind {parent.binding.name} are down while the parent remains reachable. The shared path or independent endpoint faults are both possible.",
                         ),
                         contradicting=(
-                            f"A complete {parent.binding.name} node outage is contradicted by the node itself remaining reachable.",
+                            f"A complete {parent.binding.name} node outage is contradicted by the node itself remaining reachable; endpoint identity and local forwarding health are not directly tested.",
                         ),
                         affected=_names(failed_clients),
                         causal_path=(
@@ -515,7 +516,7 @@ def _topology_causes(
             sibling
             for sibling in child_lookup.get(item.binding.parent_id or "", [])
             if sibling.monitor_id != monitor_id
-            and sibling.role in {ROLE_NETWORK_NODE, ROLE_MESH_NODE}
+            and sibling.role in {ROLE_NETWORK_NODE, ROLE_MESH_NODE, ROLE_FIXED_CLIENT}
         ]
         normal_siblings = [
             sibling.name
@@ -554,9 +555,11 @@ def classify(
     obs: ObservationSet,
     *,
     degraded_nodes: dict[str, BaselineAssessment] | None = None,
+    unstable_nodes: dict[str, QualityAssessment] | None = None,
 ) -> DiagnosisResult:
     """Classify observations with deterministic causal reasoning."""
     degraded_nodes = degraded_nodes or {}
+    unstable_nodes = unstable_nodes or {}
     if not obs.configured:
         return DiagnosisResult(
             diagnosis=SETUP_REQUIRED,
@@ -602,6 +605,35 @@ def classify(
     causes, gateway_suppresses_external = _topology_causes(obs, degraded_nodes)
     if gateway_suppresses_external:
         return _result_from_causes(obs, causes)
+
+    for item in obs.observations:
+        quality = unstable_nodes.get(item.binding.monitor_id)
+        # Show intermittent faults only after recovery; a presently down
+        # endpoint is already explained by the normal topology classifier.
+        if item.status is not True or not quality or not quality.flapping:
+            continue
+        parent = obs.by_id(item.binding.parent_id or "")
+        supports = [
+            f"{item.binding.name} returned to UP after {quality.recent_outages} separately observed down/up cycles within 15 minutes."
+        ]
+        contradictions: list[str] = []
+        if parent and parent.status is True:
+            supports.append(f"Configured parent {parent.binding.name} currently remains reachable.")
+            contradictions.append(
+                "Current parent reachability does not prove it was healthy during each brief outage."
+            )
+        causes.append(
+            RootCause(
+                f"{item.binding.name} intermittent reachability",
+                "intermittent",
+                "medium",
+                supporting=tuple(supports),
+                contradicting=tuple(contradictions),
+                affected=(item.binding.name,),
+                causal_path=path_names(item.binding.monitor_id, [x.binding for x in obs.observations])
+                or (item.binding.name,),
+            )
+        )
 
     v4_down = _all_down(ipv4)
     v6_down = _all_down(ipv6)

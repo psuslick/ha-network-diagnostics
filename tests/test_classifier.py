@@ -176,8 +176,9 @@ def test_two_fixed_children_support_forwarding_path(make_binding, make_observati
             ]
         )
     )
-    assert result.diagnosis == "Mesh Node A downstream/forwarding path failure"
-    assert result.confidence == "high"
+    assert result.diagnosis == "Multiple endpoints unreachable behind Mesh Node A"
+    assert result.confidence == "medium"
+    assert "independent endpoint faults" in result.evidence[0]
 
 
 def test_localized_latency_uses_parent_and_sibling_context(

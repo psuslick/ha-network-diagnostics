@@ -100,8 +100,12 @@ class NetworkDiagnosticsPanel extends HTMLElement {
         : `${Math.round(row.baseline_median_ms)} ms median · ${this._escape(row.baseline_state || "normal")}${row.baseline_ratio != null ? ` · ${row.baseline_ratio}×` : ""}`;
       const relation = row.parent_name ? `Parent: ${this._escape(row.parent_name)}` : "No parent";
       const service = row.service ? ` · Service: ${this._escape(row.service)}` : "";
+      const lastSeen = row.age_seconds == null ? "no heartbeat" : `${Math.round(row.age_seconds)}s since last Kuma heartbeat`;
+      const quality = row.recent_outages_15m
+        ? `<div class="muted ${row.flapping ? "bad" : "warn"}">Recent observed outages: ${this._escape(row.recent_outages_15m)} in 15 min${row.flapping ? " · intermittent reachability" : ""}${row.last_recovery ? ` · last recovery ${this._escape(row.last_recovery)}` : ""}</div>`
+        : "";
       return `<div class="monitor-row">
-        <div><strong>${this._escape(row.name)}</strong><div class="muted">${this._escape(row.role_name || row.role)} · ${relation}${service}</div><div class="muted">Baseline: ${baseline}</div></div>
+        <div><strong>${this._escape(row.name)}</strong><div class="muted">${this._escape(row.role_name || row.role)} · ${relation}${service}</div><div class="muted">${this._escape(lastSeen)} · Baseline: ${baseline}</div>${quality}</div>
         <div class="latency">${latency}</div>
         <div class="pill ${stateClass}">${this._escape(state)}</div>
       </div>`;
@@ -153,6 +157,7 @@ class NetworkDiagnosticsPanel extends HTMLElement {
     const freshLabel = !discovery.configured
       ? "not applicable until setup"
       : fresh === true ? "fresh" : fresh === false ? "stale/unavailable" : "unknown";
+    const flappingCount = (current?.observations || []).filter(row => row.flapping).length;
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -164,6 +169,8 @@ class NetworkDiagnosticsPanel extends HTMLElement {
         button[disabled] { opacity:.6; cursor:default; }
         .wrap { max-width:1280px; margin:0 auto; padding:20px; display:grid; gap:16px; }
         .hero { display:grid; grid-template-columns:2fr 1fr 1fr; gap:12px; }
+        .pulse { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+        .metric { font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; margin-top:4px; }
         .card { background:var(--card-background-color); border-radius:14px; padding:16px; box-shadow:var(--ha-card-box-shadow, 0 2px 8px rgba(0,0,0,.08)); }
         .big { font-size:28px; font-weight:700; margin:6px 0; }
         .muted { color:var(--secondary-text-color); font-size:13px; margin-top:3px; }
@@ -193,7 +200,7 @@ class NetworkDiagnosticsPanel extends HTMLElement {
         .transition { border-left:3px solid var(--divider-color); padding:6px 10px; display:grid; gap:3px; }
         .cap-grid { display:grid; gap:8px; }
         .cap { display:flex; gap:8px; align-items:center; text-transform:capitalize; }
-        @media (max-width:850px) { .hero, .grid2 { grid-template-columns:1fr; } .monitor-row { grid-template-columns:1fr auto; } .latency { display:none; } .wrap { padding:12px; } }
+        @media (max-width:850px) { .hero, .grid2 { grid-template-columns:1fr; } .pulse { grid-template-columns:repeat(2,minmax(0,1fr)); } .monitor-row { grid-template-columns:1fr auto; } .latency { display:none; } .wrap { padding:12px; } }
       </style>
       <div class="top"><h1>Network Diagnostics</h1><button ${this._loading ? "disabled" : ""} id="analyze">${this._loading ? "Analyzing…" : "Analyze now"}</button></div>
       <main class="wrap">
@@ -203,8 +210,10 @@ class NetworkDiagnosticsPanel extends HTMLElement {
           <div class="card"><div class="muted">Evidence strength</div><div class="big">${this._escape(confidence)}</div><div class="muted">High / medium / low / insufficient. No pseudo-probability.</div></div>
           <div class="card"><div class="muted">Coverage</div><div class="big">${!discovery.configured ? "Not configured" : d?.coverage_gaps?.length ? "Partial" : "Complete"}</div><div class="muted">Kuma evidence: ${freshLabel}</div></div>
         </section>
+        <section class="card"><div class="pulse"><div><div class="muted">Incidents in 24 hours</div><div class="metric">${this._escape(data?.incidents_24h ?? 0)}</div></div><div><div class="muted">Flapping monitors (15 min)</div><div class="metric ${flappingCount ? "bad" : "good"}">${flappingCount}</div></div><div><div class="muted">Oldest evidence age</div><div class="metric">${current?.freshness?.max_age_seconds == null ? "—" : `${Math.round(current.freshness.max_age_seconds)}s`}</div></div></div></section>
         ${!discovery.configured ? `<section class="card"><h2>One-time setup required</h2><p>Network Diagnostics is installed and has discovered ${discovery.available_monitor_count || 0} Uptime Kuma monitors. Open <strong>Settings → Devices & services → Integrations → Network Diagnostics</strong> and choose <strong>Reconfigure</strong> to assign diagnostic roles and parent relationships. This is setup state, not a network or monitoring failure. Kuma Tags can provide setup hints, but are not required.</p></section>` : ""}
         ${active ? `<section class="card active"><h2>Active incident</h2><strong>${this._escape(active.current_diagnosis)}</strong><div class="muted">Started ${this._escape(active.started_at)} · fingerprint ${this._escape(active.fingerprint)}</div><p>${this._escape(active.summary)}</p></section>` : ""}
+        <section class="card"><h2>Recommended next checks</h2>${this._list("Evidence-driven investigation", data?.next_checks || [])}<div class="muted">Network Diagnostics observes Kuma status; it does not test application commands or independently probe the network.</div></section>
         <section class="grid2">
           <div class="card"><h2>Root-cause analysis</h2>${this._rootCauses(d?.root_causes || [])}${this._list("Supporting evidence", d?.evidence || [], "good")}${this._list("Contradicting alternatives", d?.contradictions || [], "warn")}${this._list("Downstream effects", d?.downstream || [])}${this._list("Monitoring gaps", d?.monitoring_gaps || [], "bad")}${this._list("Coverage gaps", d?.coverage_gaps || [], "warn")}${this._list("Known limitations", discovery.limitations || [], "warn")}</div>
           <div class="card"><h2>Diagnostic coverage</h2>${this._capabilities(discovery.coverage_capabilities)}<div class="detail"><strong>${discovery.bindings?.length || 0}</strong> configured monitors · <strong>${discovery.available_monitor_count || 0}</strong> available in Kuma</div>${this._list("Unassigned Kuma monitors", discovery.unassigned_monitors || [])}${this._list("Missing configured monitors", discovery.missing_configured_monitors || [], "bad")}</div>

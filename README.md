@@ -20,6 +20,7 @@ Home Assistant official Uptime Kuma integration
 Network Diagnostics
   roles + topology + causal reasoning
   RAM-only adaptive latency baselines
+  RAM-only recent outage / flapping detection
   compact derived incident history
         │
         ├── standard HA entities
@@ -88,7 +89,7 @@ Roles represent semantics, not brands:
 - Service Path Control
 - HTTPS Control
 
-Two independent Fixed Downstream Clients behind one reachable local node provide stronger evidence of a shared forwarding/downstream-path failure than one client alone.
+Two distinct Fixed Downstream Clients behind a reachable local node can expose a shared-path hypothesis. Even when both fail, reachability alone **cannot prove the router's forwarding path is broken**; the classifier explicitly retains the alternative of independent endpoint faults.
 
 
 ## DNS monitor endpoint identity
@@ -99,11 +100,23 @@ When the official Uptime Kuma integration does not expose the resolver endpoint 
 
 ## Adaptive latency degradation
 
-Gateway, Network Node, and Mesh / Wireless Node response times use a bounded in-memory rolling baseline. The detector uses a recent median, median absolute deviation, a minimum absolute increase, a ratio threshold, and a sustained-duration requirement.
+Gateway, Network Node, Mesh / Wireless Node, **and Fixed Downstream Client** response times use a bounded in-memory rolling baseline. The detector uses a recent median, median absolute deviation, a minimum absolute increase, a ratio threshold, and a sustained-duration requirement. This makes a monitored local controller or hub an eligible latency diagnostic endpoint without hard-coding any brand or device.
 
 The baseline is deliberately **RAM-only**. After a Home Assistant restart, the panel reports a learning state until enough fresh samples have accumulated. Network Diagnostics does not persist every Kuma latency sample and does not query Recorder continuously to rebuild the window.
 
 Sibling and parent baselines are used as independent context when available. A single degraded mesh node with a healthy parent and normal sibling is stronger evidence of a localized path/node problem than degradation shared by all siblings.
+
+Invalid, nonfinite, negative, and stale response readings are not admitted to the latency baseline. Missing readings break the continuous-degradation timer so a gap cannot silently promote an anomaly to a sustained fault.
+
+## Intermittent reachability and micro-outages
+
+The integration notices fresh Kuma **UP → DOWN → UP** status cycles, even when an outage is too short to survive the normal 15-second incident confirmation. After **two observed recoveries within a rolling 15-minute window**, a reachable monitor is diagnosed as having intermittent reachability. This creates a compact, evidence-backed incident after the usual confirmation delay, making repeated transient failures easier to correlate with device-command symptoms.
+
+This is not per-packet monitoring: a drop that Uptime Kuma never reports cannot be detected, and a gap in Kuma status freshness is never counted as a real outage. The rolling transition counts stay in RAM, reset on restart, and appear in the admin panel along with each monitor's evidence age, baseline, and last observed recovery.
+
+## Investigation dashboard
+
+The panel shows recent incident volume, how many configured monitors are flapping, evidence age, parent/sibling comparisons, and context-specific **Recommended next checks**. A native **Flapping monitors** count sensor is also available for standard Home Assistant dashboards and optional automations. Healthy ICMP reachability does **not** rule out a failed device command, a cloud or local command-transport problem, or delayed wireless motion detection. This tool deliberately distinguishes those questions and recommends timestamp correlation with the applicable device integration's logs rather than claiming that a successful ping proves the device is working.
 
 ## Incidents
 
@@ -168,7 +181,13 @@ The repository also includes HACS and hassfest GitHub Actions.
 The complete acceptance contract is [SUCCESS_CRITERIA.md](SUCCESS_CRITERIA.md).
 
 
-## Upgrade from v0.3.0 / v0.3.1
+## Upgrade to v0.4.0
+
+The v0.4.0 update retains the existing v0.3.2 topology, options, monitors, incident store, and HACS install structure. No new Kuma monitors are automatically created and no Home Assistant configuration is rewritten. To gain hub-level comparisons, configure additional low-impact reachability monitors in **Uptime Kuma**, then assign them the generic **Fixed Downstream Client** role and correct parent via **Network Diagnostics → Reconfigure**. Adding a separate independent LAN Control helps distinguish whole-LAN trouble from a local endpoint issue.
+
+Publish this package as the **repository root** of a GitHub repository already configured in HACS; create a `v0.4.0` tag/release and download/update in HACS. Uploading the ZIP only as a GitHub release attachment will not normally update a standard HACS repository. A HA restart may be required after updating. See `RELEASE_NOTES_v0.4.0.md` for acceptance checks.
+
+## Earlier upgrades
 
 v0.3.2 retains the v0.3.1 live-install UX fixes and also corrects the DNS resolver-independence false blocker found during live configuration. It additionally adds portable JSON configuration upload to initial setup and Reconfigure.
 

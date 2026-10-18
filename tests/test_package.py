@@ -5,9 +5,9 @@ ROOT = Path(__file__).resolve().parents[1]
 COMP = ROOT / "custom_components" / "network_diagnostics"
 
 
-def test_manifest_is_installable_privacy_safe_v032_service():
+def test_manifest_is_installable_privacy_safe_v040_service():
     manifest = json.loads((COMP / "manifest.json").read_text())
-    assert manifest["version"] == "0.3.2"
+    assert manifest["version"] == "0.4.0"
     assert manifest["domain"] == "network_diagnostics"
     assert manifest["integration_type"] == "service"
     assert "uptime_kuma" in manifest["dependencies"]
@@ -95,3 +95,10 @@ def test_success_contract_includes_import_and_dns_identity_rules():
     criteria = (ROOT / "SUCCESS_CRITERIA.md").read_text()
     assert "Portable configuration import" in criteria
     assert "DNS query name is not resolver identity" in criteria
+
+
+def test_flapping_monitor_sensor_is_registered_and_translated():
+    sensor_source = (COMP / "sensor.py").read_text()
+    translations = json.loads((COMP / "translations" / "en.json").read_text())
+    assert "FlappingMonitorsSensor(runtime)" in sensor_source
+    assert "flapping_monitors" in translations["entity"]["sensor"]

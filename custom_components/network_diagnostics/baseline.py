@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from math import isfinite
 from statistics import median
 
 
@@ -69,12 +70,16 @@ class BaselineTracker:
         """Evaluate the current value against prior samples, then add it once."""
         if observed_at.tzinfo is None:
             observed_at = observed_at.replace(tzinfo=UTC)
+        if response_ms is not None and (not isfinite(response_ms) or response_ms < 0):
+            response_ms = None
         now = observed_at
         self._prune(monitor_id, now)
         bucket = self.samples[monitor_id]
         prior = [value for _at, value in bucket]
 
         if len(prior) < self.min_samples or response_ms is None:
+            # Missing evidence must never prolong an existing degradation.
+            self.abnormal_since.pop(monitor_id, None)
             assessment = BaselineAssessment(
                 state="learning" if response_ms is not None else "unavailable",
                 sample_count=len(prior),

@@ -26,6 +26,7 @@ async def async_setup_entry(
             CoverageSensor(runtime),
             LastIncidentSensor(runtime),
             Incidents24hSensor(runtime),
+            FlappingMonitorsSensor(runtime),
         ]
     )
 
@@ -183,3 +184,28 @@ class Incidents24hSensor(NetworkDiagnosticsEntity, SensorEntity):
     @property
     def native_value(self) -> int:
         return self.runtime.incidents_24h
+
+
+class FlappingMonitorsSensor(NetworkDiagnosticsEntity, SensorEntity):
+    """Current number of repeatedly unreachable monitors for HA automations."""
+
+    _attr_translation_key = "flapping_monitors"
+    _attr_icon = "mdi:lan-disconnect"
+
+    def __init__(self, runtime: NetworkDiagnosticsRuntime) -> None:
+        super().__init__(runtime, "flapping_monitors")
+
+    @property
+    def native_value(self) -> int:
+        return sum(
+            bool(item.get("flapping"))
+            for item in (self.runtime.current.observations if self.runtime.current else [])
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        items = self.runtime.current.observations if self.runtime.current else []
+        return {
+            "window_minutes": 15,
+            "monitors": [item["name"] for item in items if item.get("flapping")],
+        }

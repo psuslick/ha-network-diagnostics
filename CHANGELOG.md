@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+- Track brief Kuma DOWN/UP cycles in a 15-minute RAM-only window, classify repeated recovered outages as intermittent reachability, and preserve compact incident evidence.
+- Extend adaptive latency detection to Fixed Downstream Clients and use healthy siblings for comparative localization.
+- Refuse stale, negative, and nonfinite RTT values; interrupt degradation confirmation when measurements disappear.
+- Prevent multiple failed downstream clients from being misreported as a proven router/forwarding fault; retain explicit independent-endpoint alternatives.
+- Give latency and intermittent faults distinct stable-monitor incident fingerprints, improving recurrence grouping.
+- Add incident volume, flapping count, evidence age, recovery evidence, and context-specific investigation instructions to the admin panel.
+- Expose a native Flapping monitors sensor so standard Home Assistant dashboards and automations can consume the intermittent-fault count.
+- Preserve the existing Kuma-only probe boundary, topology config, compact persistence, privacy-safe export, and HA integration surface.
+
 ## 0.3.2
 
 - Changed Home Assistant `integration_type` from `helper` to `service` so Network Diagnostics is visible and manageable on the normal Integrations page.

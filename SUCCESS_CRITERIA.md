@@ -1,4 +1,6 @@
-# Network Diagnostics v0.3.2 success criteria
+# Network Diagnostics v0.4.0 success criteria
+
+> v0.4.0 extends these original acceptance criteria; all existing invariants remain applicable.
 
 This file is the acceptance contract for the v0.3.2 package. It consolidates the decisions made through the prototype, privacy, architecture, and housekeeping reviews.
 
@@ -79,3 +81,14 @@ This file is the acceptance contract for the v0.3.2 package. It consolidates the
 48. **Unknown independence is usable but not promoted.** Controls whose endpoint identity cannot be verified may participate in diagnosis and must not be blocked as duplicates merely because their target identity is unknown. They also must not increase independence-based coverage or confidence as though independence had been proven.
 49. **Portable configuration import.** Initial setup and reconfigure must offer a JSON file-upload path in addition to guided manual setup. The portable file identifies monitors by canonical Uptime Kuma names and may specify role, parent name, and service group. Import resolves those names to local stable monitor identities, validates against the currently discovered inventory, fails closed on missing/ambiguous/malformed references, and still requires the normal review/confirmation step before saving.
 50. **Import privacy boundary.** Portable configuration files must not require or accept monitored targets, credentials, Home Assistant entity IDs, config-entry IDs, or other deployment internals. The distributable repository may contain only a synthetic example. A user-specific import file may exist separately from the public package as local configuration data.
+
+## v0.4.0 extension
+
+51. **Recoverable brief failures.** A repeated Kuma UP/DOWN/UP pattern must remain diagnosable after recovery if two complete outage cycles occur in 15 minutes. One cycle does not justify a flapping diagnosis.
+52. **No invented outages.** Unknown, missing or stale monitor states never count as DOWN. Flap history is RAM-only and bounded, and is removed when a configured monitor disappears.
+53. **Hub-level comparisons.** Fixed Downstream Clients get the same bounded adaptive-latency assessment as other local topology nodes. Parent and sibling evidence can help localize but cannot prove the physical fault by reachability alone.
+54. **Honest multi-client causality.** Even two failed clients under an UP parent must not be called a confirmed router forwarding failure; independent endpoint failures remain a viable alternative.
+55. **Input and continuity safety.** Negative, infinite, NaN and stale RTT values cannot enter baseline windows, and missing readings break sustained-degradation continuity.
+56. **Diagnostic guidance.** The panel shows evidence freshness, recent observed flaps, and next checks that distinguish network reachability from application-command and motion-detection behavior.
+57. **Stable recurrence.** Separate affected monitor identities yield separate incident fingerprints even when their fault class and currently failing monitor set are identical.
+58. **Native monitoring surface.** The integration exposes a uniquely identified, translated Flapping monitors sensor, with a count and canonical monitor names, so other HA automations can consume state without scraping the panel.

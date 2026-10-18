@@ -1,4 +1,4 @@
-# v0.3.2 decisions and handoff
+# v0.3.2 decisions and handoff (historical; see v0.4.0 release notes)
 
 ## Status
 
